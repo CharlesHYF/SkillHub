@@ -11,6 +11,12 @@ describe('SyncStatusBadge', () => {
 		['失败', 'var(--sh-danger)'],
 		['本地修改', 'var(--sh-muted)'],
 		['已禁用', 'var(--sh-muted)'],
+		// 以下 4 种供 Sync Center 的 Agent 在线状态列复用(见 components/sync/agent-display.ts
+		// 的 deriveAgentSyncStatus), 与上面 5 种资源同步状态共用同一套徽标渲染逻辑
+		['在线', 'var(--sh-ok)'],
+		['部分同步', 'var(--sh-warn)'],
+		['同步失败', 'var(--sh-danger)'],
+		['离线', 'var(--sh-muted)'],
 	];
 
 	it.each(cases)('status=%s 应渲染对应文案且圆点用对应语义色', (status, expectedColor) => {
