@@ -6,7 +6,9 @@ use serde::{Deserialize, Serialize};
 
 /// 资源类型: 对应 resource.res_type 列
 /// 1-Skill, 2-Mcp
-#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+/// 额外派生 PartialOrd/Ord: 供 domain::sync::reconcile 的 managed 集合用作
+/// `BTreeSet<(ResourceType, String)>` 的键(元组需要两个字段均可排序)
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ResourceType {
 	Skill,
 	Mcp,
