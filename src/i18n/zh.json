@@ -1,0 +1,10 @@
+{
+  "nav": {
+    "dashboard": "首页",
+    "marketplace": "资源中心",
+    "installed": "已安装",
+    "sync": "Agent 同步",
+    "portability": "导入导出",
+    "settings": "设置"
+  }
+}

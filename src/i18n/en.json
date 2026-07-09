@@ -1,0 +1,10 @@
+{
+  "nav": {
+    "dashboard": "Dashboard",
+    "marketplace": "Marketplace",
+    "installed": "Installed",
+    "sync": "Sync Center",
+    "portability": "Import/Export",
+    "settings": "Settings"
+  }
+}
