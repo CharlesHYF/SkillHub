@@ -15,7 +15,8 @@ pub fn open_and_migrate(path: &Path) -> rusqlite::Result<Connection> {
 }
 
 /// 按 PRAGMA user_version 增量执行内置迁移集
-fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
+/// 可见性为 pub(crate): 供 infra::repo_resource 等仓储层测试在内存库上复用建表逻辑
+pub(crate) fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
 	apply_migrations(conn, MIGRATIONS)
 }
 
