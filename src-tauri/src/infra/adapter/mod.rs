@@ -1,8 +1,10 @@
 // 文件作用: AgentAdapter 抽象 —— 统一各 AI 工具(Claude Code/Desktop/Cursor/...)的探测/读态/应用接口,
-//           并提供全量适配器注册表 all_adapters; Task 3 起接入具体适配器(本任务: 6 款 JSON
-//           mcpServers 工具), VS Code/Codex(Task 4)与 Skill 落地(Task 5)陆续补齐
+//           并提供全量适配器注册表 all_adapters; Task 3 接入 6 款 JSON mcpServers 工具,
+//           Task 4 追加 VS Code(复用 JsonMcpAdapter, servers_key 为 "servers")与
+//           Codex(TOML 配置, 单独实现 CodexAdapter), 累计 8 款; Skill 落地留 Task 5
 // 创建日期: 2026-07-09
 
+pub mod codex;
 pub mod json_mcp;
 
 use std::path::{Path, PathBuf};
@@ -12,6 +14,7 @@ use anyhow::Result;
 use crate::domain::agent::{ActualState, AgentKind, DetectedAgent};
 use crate::domain::resource::ResourceType;
 use crate::domain::sync::{DiffPlan, ItemOutcome};
+use codex::CodexAdapter;
 use json_mcp::JsonMcpAdapter;
 
 /// 统一封装"探测本机某类 AI 工具 + 读取其配置实际态 + 把差异计划应用回配置文件"的能力。
@@ -35,10 +38,11 @@ pub trait AgentAdapter {
 }
 
 /// 全量适配器注册表; `home` 为家目录(测试时可注入临时目录, 避免探测逻辑触碰真实机器配置;
-/// 生产环境由调用方传入 `dirs::home_dir()`)。Task 3 接入 6 款 JSON mcpServers 适配器;
-/// VS Code/Codex(Task 4)与 Skill 落地(Task 5)陆续 push 进本函数。
+/// 生产环境由调用方传入 `dirs::home_dir()`)。Task 3 接入的 6 款 JSON mcpServers 工具在前,
+/// Task 4 追加的 VS Code(仍是 JsonMcpAdapter, 只是 servers_key 换成 "servers")与
+/// Codex(TOML, CodexAdapter)在后, 累计 8 款; Skill 落地留 Task 5。
 pub fn all_adapters(home: &Path) -> Vec<Box<dyn AgentAdapter>> {
-	json_mcp_agent_configs()
+	let mut adapters: Vec<Box<dyn AgentAdapter>> = json_mcp_agent_configs()
 		.into_iter()
 		.map(|(kind, rel_candidates)| -> Box<dyn AgentAdapter> {
 			Box::new(JsonMcpAdapter::new(
@@ -48,7 +52,17 @@ pub fn all_adapters(home: &Path) -> Vec<Box<dyn AgentAdapter>> {
 				"mcpServers",
 			))
 		})
-		.collect()
+		.collect();
+
+	adapters.push(Box::new(JsonMcpAdapter::new(
+		AgentKind::VsCode,
+		home.to_path_buf(),
+		vscode_config_candidates(),
+		"servers",
+	)));
+	adapters.push(Box::new(CodexAdapter::new(home.to_path_buf())));
+
+	adapters
 }
 
 /// 六款"顶层 JSON 对象里挂一个 mcpServers 字典"工具各自的候选配置路径(相对家目录); 同一工具
@@ -89,6 +103,22 @@ fn json_mcp_agent_configs() -> Vec<(AgentKind, Vec<PathBuf>)> {
 			AgentKind::GeminiCli,
 			vec![PathBuf::from(".gemini/settings.json")],
 		),
+	]
+}
+
+/// VS Code 用户级 MCP 配置候选路径(相对家目录); VS Code 把 MCP 服务器配置放在独立的
+/// `mcp.json` 里, 顶层直接挂 `servers` 字典, 与其余 6 款工具的 `mcpServers` 键名不同,
+/// 故复用 JsonMcpAdapter 时需单独传入 servers_key="servers"(见 all_adapters)。
+/// 注意: VS Code 也支持把 MCP 服务器写进 `settings.json` 的 `mcp.servers` 嵌套字段, 但那是
+/// "顶层对象套一层 mcp 再挂 servers", 与 JsonMcpAdapter"顶层直接挂字典"的假设不符, 本任务
+/// 只覆盖独立 mcp.json 形态, settings.json 内嵌形态留待后续任务专门处理。
+/// 候选按 macOS/Windows/Linux 罗列, 运行时取第一个实际存在的(本机 macOS 已验证,
+/// Windows/Linux 分支按官方文档路径预置未实机核对, 与 json_mcp_agent_configs 的惯例一致)。
+fn vscode_config_candidates() -> Vec<PathBuf> {
+	vec![
+		PathBuf::from("Library/Application Support/Code/User/mcp.json"),
+		PathBuf::from("AppData/Roaming/Code/User/mcp.json"),
+		PathBuf::from(".config/Code/User/mcp.json"),
 	]
 }
 
@@ -155,22 +185,22 @@ mod tests {
 		assert!(outcomes.is_empty());
 	}
 
-	// all_adapters 从 Task 3 起接入 6 款 JSON mcpServers 适配器(VS Code/Codex 留 Task 4);
-	// 数量与种类应与配置表逐一对应, 且每个都应同时声明支持 Mcp 与 Skill(Skill 落地留 Task 5)
+	// all_adapters 累计应接入 8 款工具: Task 3 的 6 款 JSON mcpServers 在前, Task 4 追加的
+	// VS Code(仍是 JsonMcpAdapter)与 Codex(CodexAdapter)按注册顺序追加在后; 数量与种类应与
+	// 配置表逐一对应, 且每个都应同时声明支持 Mcp 与 Skill(Skill 落地留 Task 5)
 	#[test]
-	fn all_adapters_registers_six_json_mcp_tools_with_correct_kinds_and_support() {
+	fn all_adapters_registers_eight_tools_with_correct_kinds_and_support() {
 		let home = PathBuf::from("/tmp/skillhub-test-home");
 		let adapters = all_adapters(&home);
 
-		let expected_kinds: Vec<AgentKind> = json_mcp_agent_configs()
+		let mut expected_kinds: Vec<AgentKind> = json_mcp_agent_configs()
 			.into_iter()
 			.map(|(kind, _)| kind)
 			.collect();
-		assert_eq!(
-			adapters.len(),
-			6,
-			"本任务应恰好接入 6 款 JSON mcpServers 工具"
-		);
+		expected_kinds.push(AgentKind::VsCode);
+		expected_kinds.push(AgentKind::Codex);
+
+		assert_eq!(adapters.len(), 8, "Task 4 起应累计接入 8 款工具");
 		let actual_kinds: Vec<AgentKind> = adapters.iter().map(|a| a.kind()).collect();
 		assert_eq!(actual_kinds, expected_kinds, "注册顺序与种类应与配置表一致");
 
@@ -215,5 +245,74 @@ mod tests {
 				.iter()
 				.any(|s| s.name == "bar" && s.url == Some("http://localhost:1".to_string())));
 		}
+	}
+
+	// all_adapters 里的 VS Code 条目应命中候选路径下的 mcp.json(顶层 servers 字典)fixture,
+	// 并解析出 command 型与 url 型两条服务器; 验证复用 JsonMcpAdapter 时 servers_key="servers"
+	// 确实生效(与其余 6 款工具的 "mcpServers" 键名不同)
+	#[test]
+	fn all_adapters_vscode_entry_detects_and_reads_servers_key_fixture() {
+		let dir = tempfile::tempdir().unwrap();
+		let rel = PathBuf::from("Library/Application Support/Code/User/mcp.json");
+		let abs = dir.path().join(&rel);
+		std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+		std::fs::write(
+			&abs,
+			r#"{"servers":{"foo":{"command":"node","args":["x"],"env":{"K":"V"}},"bar":{"type":"http","url":"http://localhost:1"}}}"#,
+		)
+		.unwrap();
+
+		let adapters = all_adapters(dir.path());
+		let adapter = adapters
+			.iter()
+			.find(|a| a.kind() == AgentKind::VsCode)
+			.expect("VsCode 应已注册");
+
+		let detected = adapter.detect();
+		assert_eq!(detected.len(), 1, "VsCode 应命中 fixture");
+		assert_eq!(detected[0].config_path, abs.to_string_lossy());
+
+		let state = adapter.read_state(&detected[0]).unwrap();
+		assert_eq!(state.mcp.len(), 2, "VsCode 应解析出 2 条 McpServerDef");
+		assert!(state
+			.mcp
+			.iter()
+			.any(|s| s.name == "foo" && s.command == Some("node".to_string())));
+		assert!(state
+			.mcp
+			.iter()
+			.any(|s| s.name == "bar" && s.url == Some("http://localhost:1".to_string())));
+	}
+
+	// all_adapters 里的 Codex 条目应命中 .codex/config.toml([mcp_servers.*] 表)fixture,
+	// 解析出 command 型服务器一条; 验证 CodexAdapter 已按固定相对路径正确接入
+	#[test]
+	fn all_adapters_codex_entry_detects_and_reads_config_toml_fixture() {
+		let dir = tempfile::tempdir().unwrap();
+		let rel = PathBuf::from(".codex/config.toml");
+		let abs = dir.path().join(&rel);
+		std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+		std::fs::write(
+			&abs,
+			"[mcp_servers.foo]\ncommand = \"node\"\nargs = [\"x\"]\nenv = { K = \"V\" }\n",
+		)
+		.unwrap();
+
+		let adapters = all_adapters(dir.path());
+		let adapter = adapters
+			.iter()
+			.find(|a| a.kind() == AgentKind::Codex)
+			.expect("Codex 应已注册");
+
+		let detected = adapter.detect();
+		assert_eq!(detected.len(), 1, "Codex 应命中 fixture");
+		assert_eq!(detected[0].config_path, abs.to_string_lossy());
+
+		let state = adapter.read_state(&detected[0]).unwrap();
+		assert_eq!(state.mcp.len(), 1, "Codex 应解析出 1 条 McpServerDef");
+		let foo = &state.mcp[0];
+		assert_eq!(foo.name, "foo");
+		assert_eq!(foo.command, Some("node".to_string()));
+		assert_eq!(foo.args, vec!["x".to_string()]);
 	}
 }
