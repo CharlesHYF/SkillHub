@@ -4,6 +4,8 @@ pub mod adapter;
 pub mod repo_activity;
 pub mod repo_agent;
 pub mod repo_assoc;
+pub mod repo_auth;
+pub mod repo_market;
 pub mod repo_resource;
 pub mod repo_sync;
 pub mod store;
