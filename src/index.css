@@ -1,36 +1,54 @@
-/* 文件作用: 全局样式与 SkillHub 设计令牌(亮暗双主题) */
+/* 文件作用: 全局样式与 SkillHub 设计令牌(克制 Restrained; 单一青绿强调; 亮暗双主题) */
 /* 创建日期: 2026-07-09 */
 @import 'tailwindcss';
 
+/*
+ * 配色策略: Restrained(产品 UI 默认)。唯一品牌强调色 = 青绿(teal, hue~190),
+ * 只用于主操作/当前项/链接/焦点; 其余一律中性(微青调)灰。
+ * 状态语义色: 绿=已同步/在线, 琥珀=部分/待同步, 红=失败/离线。
+ * 明令: 不使用紫色, 不使用任何渐变。全部 OKLCH, 对比度达 WCAG AA。
+ */
+
 :root,
 :root[data-theme='light'] {
-	--sh-brand: #6366f1;
-	--sh-brand-deep: #4f46e5;
-	--sh-skill: #8b5cf6;
-	--sh-mcp: #14b8a6;
-	--sh-ok: #10b981;
-	--sh-warn: #f59e0b;
-	--sh-danger: #ef4444;
-	--sh-info: #3b82f6;
-	--sh-bg: #ffffff;
-	--sh-fg: #0f172a;
-	--sh-muted: #64748b;
-	--sh-border: #e2e8f0;
+	color-scheme: light;
+
+	/* 中性(微青调) */
+	--sh-bg: oklch(0.994 0.003 195); /* 应用底色, 近白微青 */
+	--sh-surface: oklch(1 0 0); /* 卡片/面板 白 */
+	--sh-fg: oklch(0.27 0.024 215); /* 正文墨色, 对比 >12:1 */
+	--sh-muted: oklch(0.53 0.021 218); /* 次要文字, ~5:1 on 白 */
+	--sh-border: oklch(0.922 0.006 210); /* 发丝边框 */
+
+	/* 品牌强调: 青绿 */
+	--sh-brand: oklch(0.52 0.088 190); /* teal-700, 文字/图标/当前项, ~5.3:1 on 白 */
+	--sh-brand-strong: oklch(0.45 0.082 191); /* hover/pressed */
+	--sh-brand-tint: oklch(0.955 0.028 190); /* 当前项背景轻染 */
+	--sh-on-brand: oklch(0.99 0.004 190); /* 主按钮上的文字 */
+
+	/* 状态语义 */
+	--sh-ok: oklch(0.55 0.12 160); /* 已同步/在线 */
+	--sh-warn: oklch(0.6 0.13 65); /* 部分/待同步 */
+	--sh-danger: oklch(0.55 0.2 27); /* 失败/离线 */
 }
 
 :root[data-theme='dark'] {
-	--sh-brand: #818cf8;
-	--sh-brand-deep: #6366f1;
-	--sh-skill: #a78bfa;
-	--sh-mcp: #2dd4bf;
-	--sh-ok: #34d399;
-	--sh-warn: #fbbf24;
-	--sh-danger: #f87171;
-	--sh-info: #60a5fa;
-	--sh-bg: #0f172a;
-	--sh-fg: #e2e8f0;
-	--sh-muted: #94a3b8;
-	--sh-border: #1e293b;
+	color-scheme: dark;
+
+	--sh-bg: oklch(0.19 0.012 210); /* 深青灰近黑 */
+	--sh-surface: oklch(0.235 0.014 210); /* 抬升面(靠亮度而非阴影) */
+	--sh-fg: oklch(0.93 0.008 210);
+	--sh-muted: oklch(0.7 0.014 212);
+	--sh-border: oklch(0.31 0.014 210);
+
+	--sh-brand: oklch(0.76 0.1 187); /* teal-400, 暗底上更亮 */
+	--sh-brand-strong: oklch(0.83 0.092 187);
+	--sh-brand-tint: oklch(0.3 0.035 190);
+	--sh-on-brand: oklch(0.2 0.02 205);
+
+	--sh-ok: oklch(0.75 0.13 162);
+	--sh-warn: oklch(0.8 0.13 75);
+	--sh-danger: oklch(0.7 0.17 27);
 }
 
 body {

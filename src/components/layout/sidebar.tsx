@@ -25,9 +25,7 @@ export function Sidebar() {
 						end={item.path === '/'}
 						className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm"
 						style={({ isActive }) => ({
-							background: isActive
-								? 'color-mix(in srgb, var(--sh-brand) 12%, transparent)'
-								: 'transparent',
+							background: isActive ? 'var(--sh-brand-tint)' : 'transparent',
 							color: isActive ? 'var(--sh-brand)' : 'var(--sh-fg)',
 						})}
 					>
