@@ -10,6 +10,7 @@ use tauri::Manager;
 mod commands;
 pub mod domain;
 pub mod infra;
+pub mod services;
 
 /// 应用共享状态: 持有唯一的 SQLite 连接与应用数据目录
 /// rusqlite::Connection 非 Sync, 跨线程共享必须包一层 Mutex

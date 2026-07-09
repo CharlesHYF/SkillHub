@@ -1,9 +1,15 @@
 // 文件作用: resource_agent 关联表仓储 —— 期望态(desired) upsert 与双向查询,
 //           应用指纹(applied_hash)/同步状态(sync_status)维护, 显式列名/禁 SELECT */
-//           全参数化查询(阿里巴巴泰山版数据库规约)
+//           全参数化查询(阿里巴巴泰山版数据库规约); managed_keys_for_agent 供
+//           services::sync::diff_for_agent(Task 7c)构造 domain::sync::reconcile 的
+//           managed 安全边界参数
 // 创建日期: 2026-07-09
 
+use std::collections::BTreeSet;
+
 use rusqlite::{params, Connection};
+
+use crate::domain::resource::ResourceType;
 
 /// 期望态 upsert: 按 (resource_id, agent_id) 唯一键(uk_resource_agent_rid_aid)插入或冲突更新,
 /// 冲突时仅覆盖 desired/update_time(applied_hash/sync_status 由各自专用方法维护, 此处不动),
@@ -87,6 +93,30 @@ pub fn count_agents_for_resource(conn: &Connection, resource_id: i64) -> rusqlit
 		params![resource_id],
 		|row| row.get(0),
 	)
+}
+
+/// 查询某 Agent 在 resource_agent 里"曾经登记过"的资源集合, 转为 (ResourceType, name) 对;
+/// 不按 desired 过滤(即便当前 desired=0, 只要行还在就算数), 因为这里回答的是"SkillHub 是否
+/// 曾经在这台 Agent 上落地过这个资源", 而不是"现在还想不想要它"——这正是
+/// domain::sync::reconcile 的 managed 参数所需的安全边界语义(只有出现在这个集合里的实际项,
+/// 才可能在期望态里不再提及时被判定为 Remove; 见该函数文档)。JOIN resource 取 res_type/name,
+/// 若 resource 行已被删除(应用层从未设外键约束)则该行不会出现在结果里, 是已知的边界情况
+pub fn managed_keys_for_agent(
+	conn: &Connection,
+	agent_id: i64,
+) -> rusqlite::Result<BTreeSet<(ResourceType, String)>> {
+	let mut stmt = conn.prepare(
+		"SELECT r.res_type, r.name \
+		 FROM resource_agent ra \
+		 JOIN resource r ON r.id = ra.resource_id \
+		 WHERE ra.agent_id = ?1",
+	)?;
+	let rows = stmt.query_map(params![agent_id], |row| {
+		let res_type: i64 = row.get(0)?;
+		let name: String = row.get(1)?;
+		Ok((ResourceType::from_i64(res_type), name))
+	})?;
+	rows.collect()
 }
 
 #[cfg(test)]
@@ -180,5 +210,61 @@ mod tests {
 		set(&conn, 100, 3, false).unwrap();
 
 		assert_eq!(count_agents_for_resource(&conn, 100).unwrap(), 2);
+	}
+
+	/// 插入一条最小资源, 返回其 resource_id; 供 managed_keys_for_agent 系列测试构造真实可
+	/// JOIN 的 resource 行(与 set/desired_for_agent 等测试里直接使用虚构整数 id 不同,
+	/// managed_keys_for_agent 需要 JOIN resource 表取 res_type/name, 必须有真实行)
+	fn seed_resource(conn: &Connection, res_type: ResourceType, name: &str) -> i64 {
+		crate::infra::repo_resource::insert(
+			conn,
+			&crate::infra::repo_resource::NewResource {
+				res_type,
+				name: name.to_string(),
+				display_name: name.to_string(),
+				version: "1.0.0".to_string(),
+				source_type: crate::domain::resource::SourceType::LocalImport,
+				local_path: "/tmp/unused".to_string(),
+				enabled: true,
+			},
+		)
+		.unwrap()
+	}
+
+	// managed_keys_for_agent 应返回该 Agent 在 resource_agent 里全部登记过的 (res_type,name),
+	// 不论 desired 取值 —— 即便某条已被取消期望(desired 由 true 改回 false), 只要行还在,
+	// 仍应出现在结果里(呼应"managed 是曾经托管过的凭证, 与当前是否还想要它无关"的语义)
+	#[test]
+	fn managed_keys_for_agent_includes_rows_regardless_of_desired() {
+		let conn = setup_conn();
+		let skill_id = seed_resource(&conn, ResourceType::Skill, "demo-skill");
+		let mcp_id = seed_resource(&conn, ResourceType::Mcp, "demo-mcp");
+
+		set(&conn, skill_id, 1, true).unwrap();
+		set(&conn, mcp_id, 1, true).unwrap();
+		set(&conn, mcp_id, 1, false).unwrap(); // 取消期望, 但行仍在, 仍算"曾登记过"
+
+		let managed = managed_keys_for_agent(&conn, 1).unwrap();
+
+		assert_eq!(managed.len(), 2);
+		assert!(managed.contains(&(ResourceType::Skill, "demo-skill".to_string())));
+		assert!(managed.contains(&(ResourceType::Mcp, "demo-mcp".to_string())));
+	}
+
+	// managed_keys_for_agent 应只统计给定 agent_id 的登记, 不与其它 Agent 的登记混淆
+	#[test]
+	fn managed_keys_for_agent_does_not_leak_across_agents() {
+		let conn = setup_conn();
+		let resource_id = seed_resource(&conn, ResourceType::Skill, "demo-skill");
+		set(&conn, resource_id, 1, true).unwrap();
+
+		assert!(managed_keys_for_agent(&conn, 2).unwrap().is_empty());
+	}
+
+	// managed_keys_for_agent 在该 Agent 从未登记过任何资源时应返回空集合, 不报错
+	#[test]
+	fn managed_keys_for_agent_returns_empty_when_agent_has_no_rows() {
+		let conn = setup_conn();
+		assert!(managed_keys_for_agent(&conn, 999).unwrap().is_empty());
 	}
 }
