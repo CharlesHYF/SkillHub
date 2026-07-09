@@ -247,6 +247,9 @@ pub fn apply_for_agent(conn: &Connection, home: &Path, agent_id: i64) -> Result<
 		2
 	};
 	repo_sync::finish_run(conn, run_id, success, failed, skipped, status)?;
+	// 只要对该 Agent 走完一次应用流程就回写 last_sync_time(不论各项是否全部成功, 见
+	// repo_agent::touch_last_sync 文档注释), 使 Sync Center 的"最后同步时间"列有值
+	repo_agent::touch_last_sync(conn, agent_id)?;
 	repo_activity::add(
 		conn,
 		6,
@@ -594,5 +597,44 @@ mod tests {
 
 		let (_, status) = fetch_hash_and_status(&conn, resource_id, agent_id);
 		assert_eq!(status, 3, "同步失败");
+	}
+
+	// apply_for_agent: 应用完成后应回写该 Agent 的 last_sync_time(不论本次应用是否有失败项),
+	// 使 Sync Center 的"最后同步时间"列有值; 复用"Skill 源目录缺失导致失败"场景, 确保就算全败
+	// 也会 touch, 而不是只有全成功才 touch(呼应原型里"同步失败"状态的 Agent 仍展示非空的
+	// "最后同步时间")
+	#[test]
+	fn apply_for_agent_touches_last_sync_time_even_when_failed() {
+		let dir = tempdir().unwrap();
+		fs::write(dir.path().join(".claude.json"), r#"{"mcpServers":{}}"#).unwrap();
+		let conn = setup_conn();
+		let agent_id = seed_claude_code_agent(&conn, dir.path());
+
+		let missing_src = dir.path().join("does-not-exist");
+		let resource_id = seed_resource(
+			&conn,
+			ResourceType::Skill,
+			"broken-skill",
+			&missing_src.to_string_lossy(),
+		);
+		repo_assoc::set(&conn, resource_id, agent_id, true).unwrap();
+
+		assert_eq!(
+			repo_agent::get(&conn, agent_id)
+				.unwrap()
+				.unwrap()
+				.last_sync_time,
+			"",
+			"同步前应为空串"
+		);
+
+		let summary = apply_for_agent(&conn, dir.path(), agent_id).unwrap();
+		assert_eq!(summary.failed, 1, "本次应用应全败");
+
+		let row = repo_agent::get(&conn, agent_id).unwrap().unwrap();
+		assert!(
+			!row.last_sync_time.is_empty(),
+			"即使本次应用全败, 也应回写 last_sync_time"
+		);
 	}
 }

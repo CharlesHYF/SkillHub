@@ -87,6 +87,17 @@ pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Option<AgentRow>> {
 	.optional()
 }
 
+/// 把某 Agent 的 last_sync_time 回写为当前时间(数据库侧 UTC), 供一次同步应用(apply_for_agent)
+/// 完成后调用: 只要对该 Agent 走完一次应用流程即代表"发生过一次同步", 不论其中各项是否全部
+/// 成功(呼应原型里"同步失败"状态的 Agent 仍展示非空的"最后同步时间"), 故本函数不区分成功/失败,
+/// 调用方按需决定何时触发
+pub fn touch_last_sync(conn: &Connection, agent_id: i64) -> rusqlite::Result<usize> {
+	conn.execute(
+		"UPDATE agent SET last_sync_time = datetime('now') WHERE id = ?1",
+		params![agent_id],
+	)
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -168,6 +179,26 @@ mod tests {
 		assert_eq!(rows[0].last_sync_time, "", "未同步过应为空串");
 		assert!(!rows[0].create_time.is_empty());
 		assert!(!rows[0].update_time.is_empty());
+	}
+
+	// touch_last_sync 应把该 Agent 的 last_sync_time 由初始空串更新为非空时间戳,
+	// 不影响 name/scope/status 等其它列
+	#[test]
+	fn touch_last_sync_sets_non_empty_timestamp() {
+		let conn = setup_conn();
+		let id = upsert(&conn, &sample_agent()).unwrap();
+		assert_eq!(
+			get(&conn, id).unwrap().unwrap().last_sync_time,
+			"",
+			"未同步前应为空串"
+		);
+
+		let affected = touch_last_sync(&conn, id).unwrap();
+		assert_eq!(affected, 1);
+
+		let row = get(&conn, id).unwrap().unwrap();
+		assert!(!row.last_sync_time.is_empty(), "touch 后应非空");
+		assert_eq!(row.name, "Claude Code", "不应影响其它列");
 	}
 
 	// AgentRow: 序列化应使用 camelCase 字段名(agentKind/configPath/lastSyncTime 等),
