@@ -1,8 +1,10 @@
 // 文件作用: 通用 JSON mcpServers 适配器 —— 覆盖 ClaudeCode/ClaudeDesktop/Cursor/Windsurf/Cline/
-//           GeminiCli 六款工具的探测(detect)与 MCP 实际态读取(read_state)。这六款工具的配置
-//           文件形态一致: 顶层 JSON 对象下挂一个 mcpServers 字典, 差异只在文件路径; 故用同一
+//           GeminiCli 六款工具的探测(detect)与 MCP+Skill 实际态读取(read_state)。这六款工具的
+//           配置文件形态一致: 顶层 JSON 对象下挂一个 mcpServers 字典, 差异只在文件路径; 故用同一
 //           结构体 + 候选路径表覆盖全部六款, 具体路径表见 adapter::mod 的 json_mcp_agent_configs。
-//           Skill 落地(read_state.skills)留 Task 5, apply 留 Task 7, 本文件均先占位。
+//           Skill 的落地读取(read_state.skills)已接入 skill_target(见 SkillTarget, Task 5),
+//           每款工具映射到哪种 SkillTarget 见 adapter::mod::json_mcp_agent_configs; 落地写入
+//           (apply)留 Task 7, 本文件该方法仍先占位。
 // 创建日期: 2026-07-09
 
 use std::collections::BTreeMap;
@@ -16,16 +18,19 @@ use crate::domain::agent::{ActualState, AgentKind, AgentScope, DetectedAgent, Mc
 use crate::domain::resource::ResourceType;
 use crate::domain::sync::{DiffPlan, ItemOutcome};
 
+use super::skill_target::SkillTarget;
 use super::AgentAdapter;
 
 /// 通用 JSON mcpServers 适配器: `rel_candidates` 为相对 `home` 的候选配置文件路径(工具版本/
 /// 操作系统可能导致路径漂移, 按声明顺序取第一个真实存在的); `servers_key` 为该工具配置文件里
-/// 挂 MCP 服务器字典的键名(六款工具目前均为 "mcpServers", 保留为参数以防未来漂移)。
+/// 挂 MCP 服务器字典的键名(六款工具目前均为 "mcpServers", 保留为参数以防未来漂移); `skill_target`
+/// 为该工具的 Skill 落地形态(见 SkillTarget), 由调用方按工具种类传入。
 pub struct JsonMcpAdapter {
 	kind: AgentKind,
 	home: PathBuf,
 	rel_candidates: Vec<PathBuf>,
 	servers_key: &'static str,
+	skill_target: SkillTarget,
 }
 
 impl JsonMcpAdapter {
@@ -36,12 +41,14 @@ impl JsonMcpAdapter {
 		home: PathBuf,
 		rel_candidates: Vec<PathBuf>,
 		servers_key: &'static str,
+		skill_target: SkillTarget,
 	) -> Self {
 		Self {
 			kind,
 			home,
 			rel_candidates,
 			servers_key,
+			skill_target,
 		}
 	}
 
@@ -60,7 +67,7 @@ impl AgentAdapter for JsonMcpAdapter {
 		self.kind
 	}
 
-	/// 六款工具均可托管 MCP 与 Skill(Skill 的落地读写留 Task 5/7, 能力矩阵上先声明支持)
+	/// 六款工具均可托管 MCP 与 Skill(Skill 的落地读取已接入 skill_target, 写入留 Task 7)
 	fn supports(&self, ty: ResourceType) -> bool {
 		matches!(ty, ResourceType::Skill | ResourceType::Mcp)
 	}
@@ -79,9 +86,10 @@ impl AgentAdapter for JsonMcpAdapter {
 		}
 	}
 
-	/// 读取 `agent.config_path` 指向的配置文件, 解析出 mcpServers 字典。配置文件不存在视为
-	/// "实际态为空"(工具装了但还没配任何 MCP, 不算错误); 文件存在但 JSON 解析失败才报错,
-	/// 因为那属于配置文件本身损坏, 不应被静默吞掉
+	/// 读取 `agent.config_path` 指向的配置文件, 解析出 mcpServers 字典, 并按 skill_target
+	/// 读出 Skill 清单一并装进 ActualState。mcp 配置文件不存在视为该维度"实际态为空"(工具装了
+	/// 但还没配任何 MCP, 不算错误, 且不影响 Skill 照常读取, 二者落地位置本就互相独立); 文件
+	/// 存在但 JSON 解析失败才报错, 因为那属于配置文件本身损坏, 不应被静默吞掉
 	fn read_state(&self, agent: &DetectedAgent) -> Result<ActualState> {
 		let path = &agent.config_path;
 		let text = match fs::read_to_string(path) {
@@ -89,7 +97,7 @@ impl AgentAdapter for JsonMcpAdapter {
 			Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
 				return Ok(ActualState {
 					mcp: Vec::new(),
-					skills: Vec::new(),
+					skills: self.skill_target.read_skills(&self.home),
 				});
 			}
 			Err(err) => return Err(err).with_context(|| format!("读取配置文件失败: {path}")),
@@ -98,7 +106,7 @@ impl AgentAdapter for JsonMcpAdapter {
 			.with_context(|| format!("解析配置文件 JSON 失败: {path}"))?;
 		Ok(ActualState {
 			mcp: parse_mcp_servers(&root, self.servers_key),
-			skills: Vec::new(),
+			skills: self.skill_target.read_skills(&self.home),
 		})
 	}
 
@@ -191,6 +199,7 @@ mod tests {
 			dir.path().to_path_buf(),
 			vec![PathBuf::from(".claude.json")],
 			"mcpServers",
+			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 
 		let detected = adapter.detect();
@@ -202,7 +211,10 @@ mod tests {
 
 		let state = adapter.read_state(&detected[0]).unwrap();
 		assert_fixture_mcp(&state.mcp);
-		assert!(state.skills.is_empty(), "Skill 落地留 Task 5, 本任务应为空");
+		assert!(
+			state.skills.is_empty(),
+			"本测试未落地任何 .claude/skills fixture, 应为空"
+		);
 	}
 
 	// detect 应按声明顺序容错: 排在前面的候选路径缺失时应继续尝试后面的, 命中已存在的那个
@@ -219,6 +231,7 @@ mod tests {
 			dir.path().to_path_buf(),
 			vec![PathBuf::from("does/not/exist.json"), present_rel],
 			"mcpServers",
+			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 
 		let detected = adapter.detect();
@@ -235,6 +248,7 @@ mod tests {
 			dir.path().to_path_buf(),
 			vec![PathBuf::from(".claude.json")],
 			"mcpServers",
+			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		assert!(adapter.detect().is_empty());
 	}
@@ -248,6 +262,10 @@ mod tests {
 			dir.path().to_path_buf(),
 			vec![PathBuf::from(".cursor/mcp.json")],
 			"mcpServers",
+			SkillTarget::RulesDir {
+				dir: PathBuf::from(".cursor/rules"),
+				ext: "mdc".to_string(),
+			},
 		);
 		let probe = DetectedAgent {
 			kind: AgentKind::Cursor,
@@ -279,6 +297,7 @@ mod tests {
 			dir.path().to_path_buf(),
 			vec![PathBuf::from(".gemini/settings.json")],
 			"mcpServers",
+			SkillTarget::InstructionsFile(PathBuf::from("GEMINI.md")),
 		);
 		let probe = DetectedAgent {
 			kind: AgentKind::GeminiCli,
@@ -303,6 +322,7 @@ mod tests {
 			dir.path().to_path_buf(),
 			vec![PathBuf::from(".claude.json")],
 			"mcpServers",
+			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		let probe = DetectedAgent {
 			kind: AgentKind::ClaudeCode,
@@ -333,6 +353,7 @@ mod tests {
 			dir.path().to_path_buf(),
 			vec![PathBuf::from(".claude.json")],
 			"mcpServers",
+			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		let probe = DetectedAgent {
 			kind: AgentKind::ClaudeCode,
@@ -349,5 +370,103 @@ mod tests {
 		assert!(broken.args.is_empty());
 		let ok = state.mcp.iter().find(|s| s.name == "ok").unwrap();
 		assert_eq!(ok.command, Some("node".to_string()));
+	}
+
+	// read_state: 应同时返回 mcp(配置文件里的 mcpServers)与 skills(skill_target 描述的
+	// .claude/skills 目录), 二者落地位置互不相干, 应各自独立解析并一并装进 ActualState
+	#[test]
+	fn read_state_combines_mcp_and_claude_skills_dir_skills() {
+		let dir = tempdir().unwrap();
+		let config_path = dir.path().join(".claude.json");
+		fs::write(&config_path, FIXTURE_JSON).unwrap();
+
+		let skill_dir = dir.path().join(".claude/skills/demo-skill");
+		fs::create_dir_all(&skill_dir).unwrap();
+		fs::write(
+			skill_dir.join("SKILL.md"),
+			"---\nname: demo-skill\nversion: 1.2.0\n---\n",
+		)
+		.unwrap();
+
+		let adapter = JsonMcpAdapter::new(
+			AgentKind::ClaudeCode,
+			dir.path().to_path_buf(),
+			vec![PathBuf::from(".claude.json")],
+			"mcpServers",
+			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
+		);
+
+		let detected = adapter.detect();
+		let state = adapter.read_state(&detected[0]).unwrap();
+
+		assert_fixture_mcp(&state.mcp);
+		assert_eq!(state.skills.len(), 1);
+		assert_eq!(state.skills[0].name, "demo-skill");
+		assert_eq!(state.skills[0].version, "1.2.0");
+	}
+
+	// read_state: skill_target 换成 RulesDir 形态(Cursor/Windsurf/Cline/VsCode 的落地方式)
+	// 时也应正确读出, 证明该字段与具体 SkillTarget 变体无关, 由外部注入决定
+	#[test]
+	fn read_state_combines_mcp_and_rules_dir_skills() {
+		let dir = tempdir().unwrap();
+		let config_path = dir.path().join(".cursor/mcp.json");
+		fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+		fs::write(&config_path, FIXTURE_JSON).unwrap();
+		fs::create_dir_all(dir.path().join(".cursor/rules")).unwrap();
+		fs::write(dir.path().join(".cursor/rules/demo-skill.mdc"), "规则内容").unwrap();
+
+		let adapter = JsonMcpAdapter::new(
+			AgentKind::Cursor,
+			dir.path().to_path_buf(),
+			vec![PathBuf::from(".cursor/mcp.json")],
+			"mcpServers",
+			SkillTarget::RulesDir {
+				dir: PathBuf::from(".cursor/rules"),
+				ext: "mdc".to_string(),
+			},
+		);
+
+		let detected = adapter.detect();
+		let state = adapter.read_state(&detected[0]).unwrap();
+
+		assert_fixture_mcp(&state.mcp);
+		assert_eq!(state.skills.len(), 1);
+		assert_eq!(state.skills[0].name, "demo-skill");
+		assert_eq!(state.skills[0].version, "");
+	}
+
+	// read_state: mcp 配置文件缺失只代表"还没配任何 MCP"(见 read_state 文档注释), 不应连带
+	// 影响 Skill 的读取 —— 二者落地位置独立, 缺一不代表另一个也该为空
+	#[test]
+	fn read_state_reads_skills_even_when_mcp_config_file_missing() {
+		let dir = tempdir().unwrap();
+		let skill_dir = dir.path().join(".claude/skills/demo-skill");
+		fs::create_dir_all(&skill_dir).unwrap();
+		fs::write(skill_dir.join("SKILL.md"), "---\nversion: 0.1.0\n---\n").unwrap();
+
+		let adapter = JsonMcpAdapter::new(
+			AgentKind::ClaudeCode,
+			dir.path().to_path_buf(),
+			vec![PathBuf::from(".claude.json")],
+			"mcpServers",
+			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
+		);
+		let probe = DetectedAgent {
+			kind: AgentKind::ClaudeCode,
+			name: "Claude Code".to_string(),
+			config_path: dir
+				.path()
+				.join(".claude.json")
+				.to_string_lossy()
+				.into_owned(),
+			scope: AgentScope::Global,
+			online: true,
+		};
+
+		let state = adapter.read_state(&probe).unwrap();
+		assert!(state.mcp.is_empty());
+		assert_eq!(state.skills.len(), 1);
+		assert_eq!(state.skills[0].name, "demo-skill");
 	}
 }
