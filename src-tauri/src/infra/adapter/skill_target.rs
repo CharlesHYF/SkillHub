@@ -180,8 +180,10 @@ fn remove_claude_skills_dir(root: &Path, name: &str) -> Result<()> {
 }
 
 /// 把 `src` 目录树逐层递归复制到 `dst`(`dst` 不存在会先创建); 只处理普通文件与子目录,
-/// 符号链接等特殊类型目前场景(Skill 源目录)不涉及, 按需可后续扩展
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+/// 符号链接等特殊类型目前场景(Skill 源目录)不涉及, 按需可后续扩展。
+/// 可见性 pub(crate): 供 services::library::import_local(Task 8)复用同一份"整树复制"逻辑,
+/// 落地本地导入的 Skill 目录, 避免与本文件的 write_claude_skills_dir 各自维护一份递归复制
+pub(crate) fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
 	fs::create_dir_all(dst).with_context(|| format!("创建目录失败: {}", dst.display()))?;
 	let entries = fs::read_dir(src).with_context(|| format!("读取目录失败: {}", src.display()))?;
 	for entry in entries {
@@ -270,8 +272,10 @@ fn read_skill_md_or_placeholder(name: &str, src_dir: &Path) -> String {
 /// YAML 解析依赖(frontmatter 目前只需读这一个字段, 用不到完整 YAML 语义)。frontmatter 必须
 /// 以独占一行的 `---` 开头, 扫描到下一个独占一行的 `---` 为止; 边界不存在或界内找不到
 /// `version:` 前缀的行都返回空串, 不视为错误。取值支持前后空白与成对的单/双引号包裹
-/// (如 `version: "1.2.0"`), 引号会被裁掉(见 strip_matching_quotes)
-fn parse_frontmatter_version(text: &str) -> String {
+/// (如 `version: "1.2.0"`), 引号会被裁掉(见 strip_matching_quotes)。
+/// 可见性 pub(crate): 供 services::library::import_local(Task 8)复用, 本地导入 Skill 时从
+/// 其 SKILL.md 解析 version, 与本文件 read_claude_skills_dir 读已装 Skill 版本同一套逻辑
+pub(crate) fn parse_frontmatter_version(text: &str) -> String {
 	let mut lines = text.lines();
 	let Some(first) = lines.next() else {
 		return String::new();

@@ -95,6 +95,20 @@ pub fn count_agents_for_resource(conn: &Connection, resource_id: i64) -> rusqlit
 	)
 }
 
+/// 统计全部处于"待同步"(sync_status=0)的资源-Agent 关联行数, 供 Task 8 首页统计卡片
+/// (services::dashboard::summary 的 pending_count)取用的一个简单可算口径: 只看数据库里已记录
+/// 的同步状态, 不逐 Agent 现读配置文件跑一遍 reconcile(那需要 home 家目录与逐 Agent 文件 IO,
+/// 首页汇总只要一个量级参考值, 精确差异请走 sync_diff 逐 Agent 现算)。不区分 desired 取值,
+/// 与 managed_keys_for_agent 同样的理由: 该列只反映"上次是否成功同步过", 与当前还想不想要它
+/// 是两件事, 但这里只是首页参考值, 不追求语义上的绝对精确
+pub fn count_pending(conn: &Connection) -> rusqlite::Result<i64> {
+	conn.query_row(
+		"SELECT COUNT(id) FROM resource_agent WHERE sync_status = 0",
+		[],
+		|row| row.get(0),
+	)
+}
+
 /// 查询某 Agent 在 resource_agent 里"曾经登记过"的资源集合, 转为 (ResourceType, name) 对;
 /// 不按 desired 过滤(即便当前 desired=0, 只要行还在就算数), 因为这里回答的是"SkillHub 是否
 /// 曾经在这台 Agent 上落地过这个资源", 而不是"现在还想不想要它"——这正是
@@ -266,5 +280,25 @@ mod tests {
 	fn managed_keys_for_agent_returns_empty_when_agent_has_no_rows() {
 		let conn = setup_conn();
 		assert!(managed_keys_for_agent(&conn, 999).unwrap().is_empty());
+	}
+
+	// count_pending 应只统计 sync_status=0(待同步)的行, 不论 desired 取值, 也不受其它
+	// sync_status(已同步/本地修改/同步失败/已禁用)行干扰
+	#[test]
+	fn count_pending_counts_only_sync_status_zero_rows() {
+		let conn = setup_conn();
+		set(&conn, 1, 1, true).unwrap(); // sync_status 默认 0-待同步
+		set(&conn, 2, 1, true).unwrap();
+		set_sync_status(&conn, 2, 1, 1).unwrap(); // 已同步, 不应计入
+		set(&conn, 3, 1, false).unwrap(); // desired=false 但 sync_status 仍是默认 0, 仍应计入
+
+		assert_eq!(count_pending(&conn).unwrap(), 2);
+	}
+
+	// count_pending 在没有任何关联行时应返回 0, 不报错
+	#[test]
+	fn count_pending_returns_zero_when_no_rows() {
+		let conn = setup_conn();
+		assert_eq!(count_pending(&conn).unwrap(), 0);
 	}
 }

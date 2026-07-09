@@ -46,7 +46,22 @@ pub fn run() {
 			});
 			Ok(())
 		})
-		.invoke_handler(tauri::generate_handler![commands::health::app_health])
+		.invoke_handler(tauri::generate_handler![
+			commands::health::app_health,
+			commands::library::library_list,
+			commands::library::library_get,
+			commands::library::library_counts,
+			commands::library::resource_import_local,
+			commands::library::resource_set_enabled,
+			commands::library::resource_delete,
+			commands::agent::agent_detect,
+			commands::agent::agent_list,
+			commands::sync::assoc_set,
+			commands::sync::sync_diff,
+			commands::sync::sync_apply,
+			commands::dashboard::dashboard_summary,
+			commands::dashboard::activity_recent,
+		])
 		.run(tauri::generate_context!())
 		.expect("运行 Tauri 应用失败");
 }

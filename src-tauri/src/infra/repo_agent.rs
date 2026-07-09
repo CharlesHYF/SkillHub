@@ -3,12 +3,15 @@
 // 创建日期: 2026-07-09
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
+use serde::Serialize;
 
 use crate::domain::agent::{AgentKind, AgentScope, DetectedAgent};
 
 /// agent 表一行(持久化态); 与 DetectedAgent 的差异在于多了 id/last_sync_time/create_time/update_time
-/// 等仅数据库侧维护的字段, 字段名与列名逐一对应
-#[derive(Debug, Clone, PartialEq)]
+/// 等仅数据库侧维护的字段, 字段名与列名逐一对应。派生 Serialize(camelCase)供 Task 8 命令层
+/// (commands::agent)直接作为 Tauri 命令返回类型
+#[derive(Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct AgentRow {
 	pub id: i64,
 	pub agent_kind: AgentKind,
@@ -165,5 +168,21 @@ mod tests {
 		assert_eq!(rows[0].last_sync_time, "", "未同步过应为空串");
 		assert!(!rows[0].create_time.is_empty());
 		assert!(!rows[0].update_time.is_empty());
+	}
+
+	// AgentRow: 序列化应使用 camelCase 字段名(agentKind/configPath/lastSyncTime 等),
+	// 供 Task 8 命令层(commands::agent)直接作为 Tauri 命令返回类型消费
+	#[test]
+	fn agent_row_serializes_as_camel_case() {
+		let conn = setup_conn();
+		let id = upsert(&conn, &sample_agent()).unwrap();
+		let row = get(&conn, id).unwrap().unwrap();
+
+		let json = serde_json::to_value(&row).unwrap();
+		assert_eq!(json["agentKind"], "ClaudeCode");
+		assert_eq!(json["configPath"], "/home/demo/.claude.json");
+		assert_eq!(json["lastSyncTime"], "");
+		assert!(json.get("agent_kind").is_none());
+		assert!(json.get("config_path").is_none());
 	}
 }
