@@ -50,6 +50,20 @@ export interface SyncProgress {
 	currentName: string;
 }
 
+/** 资源-Agent 关联展示行(仅取期望态 desired=1), 供"已安装"界面一次性统计每个资源已关联的
+ * Agent 数量与详情面板的关联列表, 避免逐资源单独查询(N+1) */
+export interface ResourceAgentLink {
+	resourceId: number;
+	agentId: number;
+	agentName: string;
+}
+
+/** 一次性查询全部资源的关联 Agent(仅期望态), 供"已安装"界面复用同一份数据
+ * (表格"已关联 Agent 数"列 + 详情面板"已关联 Agent"列表) */
+export async function resourceAgentLinks(): Promise<ResourceAgentLink[]> {
+	return invoke<ResourceAgentLink[]>('resource_agent_links');
+}
+
 /** 设置某资源相对某 Agent 的期望态(desired: 应存在/不应存在) */
 export async function assocSet(
 	resourceId: number,

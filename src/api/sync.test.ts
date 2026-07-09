@@ -17,8 +17,10 @@ import {
 	syncDiff,
 	syncApply,
 	onSyncProgress,
+	resourceAgentLinks,
 	type DiffPlan,
 	type SyncSummary,
+	type ResourceAgentLink,
 } from './sync';
 
 describe('sync api', () => {
@@ -45,6 +47,16 @@ describe('sync api', () => {
 		const got = await syncApply([1, 2]);
 		expect(got).toEqual(summary);
 		expect(vi.mocked(invoke)).toHaveBeenCalledWith('sync_apply', { agentIds: [1, 2] });
+	});
+
+	it('resourceAgentLinks 以 command 名 resource_agent_links 调用, 返回关联展示行', async () => {
+		const links: ResourceAgentLink[] = [
+			{ resourceId: 1, agentId: 2, agentName: 'Agent Alpha' },
+		];
+		vi.mocked(invoke).mockResolvedValueOnce(links);
+		const got = await resourceAgentLinks();
+		expect(got).toEqual(links);
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('resource_agent_links');
 	});
 
 	it('onSyncProgress 订阅 "sync://progress" 频道并把事件 payload 转发给回调', async () => {

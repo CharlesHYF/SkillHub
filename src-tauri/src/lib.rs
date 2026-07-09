@@ -59,6 +59,7 @@ pub fn run() {
 			commands::sync::assoc_set,
 			commands::sync::sync_diff,
 			commands::sync::sync_apply,
+			commands::sync::resource_agent_links,
 			commands::dashboard::dashboard_summary,
 			commands::dashboard::activity_recent,
 		])

@@ -8,6 +8,7 @@
 use std::collections::BTreeSet;
 
 use rusqlite::{params, Connection};
+use serde::Serialize;
 
 use crate::domain::resource::ResourceType;
 
@@ -93,6 +94,37 @@ pub fn count_agents_for_resource(conn: &Connection, resource_id: i64) -> rusqlit
 		params![resource_id],
 		|row| row.get(0),
 	)
+}
+
+/// 资源-Agent 关联的展示行(仅取期望态 desired=1), 附带 Agent 展示名(JOIN agent 表); 供"已安装"
+/// 界面一次性取全部资源的关联关系, 用于表格"已关联 Agent 数"列与详情面板"已关联 Agent"列表,
+/// 避免逐资源 N+1 查询(命令层见 commands::sync::resource_agent_links)
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceAgentLink {
+	pub resource_id: i64,
+	pub agent_id: i64,
+	pub agent_name: String,
+}
+
+/// 一次性查询全部资源的关联 Agent(仅 desired=1), 按 resource_id, agent_id 升序; 调用方按需
+/// 用 resource_id 分组统计数量, 或按选中的 resource_id 过滤取展示列表
+pub fn list_all_links(conn: &Connection) -> rusqlite::Result<Vec<ResourceAgentLink>> {
+	let mut stmt = conn.prepare(
+		"SELECT ra.resource_id, a.id, a.name \
+		 FROM resource_agent ra \
+		 JOIN agent a ON a.id = ra.agent_id \
+		 WHERE ra.desired = 1 \
+		 ORDER BY ra.resource_id, a.id",
+	)?;
+	let rows = stmt.query_map([], |row| {
+		Ok(ResourceAgentLink {
+			resource_id: row.get(0)?,
+			agent_id: row.get(1)?,
+			agent_name: row.get(2)?,
+		})
+	})?;
+	rows.collect()
 }
 
 /// 统计全部处于"待同步"(sync_status=0)的资源-Agent 关联行数, 供 Task 8 首页统计卡片
@@ -263,6 +295,60 @@ mod tests {
 		assert_eq!(managed.len(), 2);
 		assert!(managed.contains(&(ResourceType::Skill, "demo-skill".to_string())));
 		assert!(managed.contains(&(ResourceType::Mcp, "demo-mcp".to_string())));
+	}
+
+	/// 插入一条最小 Agent, 返回其 agent_id; 供 list_all_links 系列测试构造真实可 JOIN 的
+	/// agent 行(config_path 按 name 区分, 避免撞 uk_agent_kind_path 唯一键)
+	fn seed_agent(conn: &Connection, name: &str) -> i64 {
+		crate::infra::repo_agent::upsert(
+			conn,
+			&crate::domain::agent::DetectedAgent {
+				kind: crate::domain::agent::AgentKind::ClaudeCode,
+				name: name.to_string(),
+				config_path: format!("/tmp/{name}.json"),
+				scope: crate::domain::agent::AgentScope::Global,
+				online: true,
+			},
+		)
+		.unwrap()
+	}
+
+	// list_all_links: 应 JOIN 出 Agent 展示名, 只取 desired=1 的关联行, 可按 resource_id 分组
+	#[test]
+	fn list_all_links_joins_agent_name_and_filters_desired() {
+		let conn = setup_conn();
+		let skill_id = seed_resource(&conn, ResourceType::Skill, "demo-skill");
+		let mcp_id = seed_resource(&conn, ResourceType::Mcp, "demo-mcp");
+		let agent_a = seed_agent(&conn, "Agent Alpha");
+		let agent_b = seed_agent(&conn, "Agent Beta");
+
+		set(&conn, skill_id, agent_a, true).unwrap();
+		set(&conn, skill_id, agent_b, true).unwrap();
+		set(&conn, mcp_id, agent_a, true).unwrap();
+		set(&conn, mcp_id, agent_b, false).unwrap(); // 未期望, 不应出现
+
+		let links = list_all_links(&conn).unwrap();
+
+		assert_eq!(
+			links.len(),
+			3,
+			"skill 两条 + mcp 一条, mcp/agent_b 未期望不计入"
+		);
+		let skill_links: Vec<_> = links.iter().filter(|l| l.resource_id == skill_id).collect();
+		assert_eq!(skill_links.len(), 2);
+		assert!(skill_links.iter().any(|l| l.agent_name == "Agent Alpha"));
+		assert!(skill_links.iter().any(|l| l.agent_name == "Agent Beta"));
+		let mcp_links: Vec<_> = links.iter().filter(|l| l.resource_id == mcp_id).collect();
+		assert_eq!(mcp_links.len(), 1);
+		assert_eq!(mcp_links[0].agent_id, agent_a);
+		assert_eq!(mcp_links[0].agent_name, "Agent Alpha");
+	}
+
+	// list_all_links: 没有任何关联行时应返回空, 不报错
+	#[test]
+	fn list_all_links_returns_empty_when_no_associations() {
+		let conn = setup_conn();
+		assert!(list_all_links(&conn).unwrap().is_empty());
 	}
 
 	// managed_keys_for_agent 应只统计给定 agent_id 的登记, 不与其它 Agent 的登记混淆

@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::domain::sync::DiffPlan;
 use crate::infra::repo_agent;
-use crate::infra::repo_assoc;
+use crate::infra::repo_assoc::{self, ResourceAgentLink};
 use crate::services::sync::{self, SyncSummary};
 use crate::AppState;
 
@@ -40,6 +40,15 @@ pub fn assoc_set(
 	let conn = state.db();
 	repo_assoc::set(&conn, resource_id, agent_id, desired).map_err(|e| e.to_string())?;
 	Ok(())
+}
+
+/// 一次性查询全部资源的关联 Agent 展示行(仅期望态 desired=1, 附 Agent 展示名), 供"已安装"
+/// 界面统计"已关联 Agent 数"列与详情面板"已关联 Agent"列表复用同一份数据, 避免逐资源 N+1
+/// 查询(见 repo_assoc::list_all_links); 是对仓储的直接透传, 无额外业务逻辑, 故不下沉 services 层
+#[tauri::command]
+pub fn resource_agent_links(state: State<'_, AppState>) -> Result<Vec<ResourceAgentLink>, String> {
+	let conn = state.db();
+	repo_assoc::list_all_links(&conn).map_err(|e| e.to_string())
 }
 
 /// 计算某 Agent 的期望态与其配置文件实际态之间的差异计划(见 services::sync::diff_for_agent)
