@@ -29,6 +29,7 @@ venv/
 # --- 环境与 IDE ---
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 *~
