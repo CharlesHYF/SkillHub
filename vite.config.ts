@@ -1,14 +1,24 @@
 // 文件作用: Vite 构建配置, 适配 Tauri 开发所需的固定端口与 HMR 设置
 // 创建日期: 2026-07-09
+import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
-// @ts-expect-error process 是 nodejs 全局对象
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-	plugins: [react()],
+	// Tailwind 用 Vite 插件而非 PostCSS 接入: 让 Vite 自身的 CSS 资源管线正确处理
+	// node_modules 内 @import 的字体包(@fontsource-variable/inter)里的相对 url() 引用
+	plugins: [react(), tailwindcss()],
+
+	// 路径别名: @/* 指向 src/*, 供 shadcn/ui 组件与业务代码统一引用
+	resolve: {
+		alias: {
+			'@': path.resolve(__dirname, './src'),
+		},
+	},
 
 	// 以下配置专为 Tauri 开发场景适配, 仅在 `tauri dev` / `tauri build` 时生效
 	//

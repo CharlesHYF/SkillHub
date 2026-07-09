@@ -1,6 +1,12 @@
 /* 文件作用: 全局样式与 SkillHub 设计令牌(克制 Restrained; 单一青绿强调; 亮暗双主题) */
 /* 创建日期: 2026-07-09 */
 @import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import '@fontsource-variable/inter';
+
+/* dark: 变体跟随 ThemeProvider 写在根元素的 data-theme 属性(见 theme-provider.tsx), 不用 shadcn 默认的 .dark class */
+@custom-variant dark (&:is([data-theme='dark'] *));
 
 /*
  * 配色策略: Restrained(产品 UI 默认)。唯一品牌强调色 = 青绿(teal, hue~190),
@@ -30,6 +36,30 @@
 	--sh-ok: oklch(0.55 0.12 160); /* 已同步/在线 */
 	--sh-warn: oklch(0.6 0.13 65); /* 部分/待同步 */
 	--sh-danger: oklch(0.55 0.2 27); /* 失败/离线 */
+
+	/*
+	 * shadcn/ui 基元语义令牌桥接: 全部指向上面的 --sh-*, 不引入第二套配色。
+	 * 新增基元若用到这里未列出的槽位(如 --chart-*), 先在 DESIGN.md 补令牌定义再桥接。
+	 */
+	--background: var(--sh-bg);
+	--foreground: var(--sh-fg);
+	--card: var(--sh-surface);
+	--card-foreground: var(--sh-fg);
+	--popover: var(--sh-surface);
+	--popover-foreground: var(--sh-fg);
+	--primary: var(--sh-brand);
+	--primary-foreground: var(--sh-on-brand);
+	--secondary: var(--sh-border);
+	--secondary-foreground: var(--sh-fg);
+	--muted: var(--sh-border);
+	--muted-foreground: var(--sh-muted);
+	--accent: var(--sh-brand-tint);
+	--accent-foreground: var(--sh-brand);
+	--destructive: var(--sh-danger);
+	--border: var(--sh-border);
+	--input: var(--sh-border);
+	--ring: var(--sh-brand);
+	--radius: 0.625rem;
 }
 
 :root[data-theme='dark'] {
@@ -49,9 +79,74 @@
 	--sh-ok: oklch(0.75 0.13 162);
 	--sh-warn: oklch(0.8 0.13 75);
 	--sh-danger: oklch(0.7 0.17 27);
+
+	/* shadcn/ui 基元语义令牌桥接(暗色), 值随上面的 --sh-* 自动切换, 结构同亮色 */
+	--background: var(--sh-bg);
+	--foreground: var(--sh-fg);
+	--card: var(--sh-surface);
+	--card-foreground: var(--sh-fg);
+	--popover: var(--sh-surface);
+	--popover-foreground: var(--sh-fg);
+	--primary: var(--sh-brand);
+	--primary-foreground: var(--sh-on-brand);
+	--secondary: var(--sh-border);
+	--secondary-foreground: var(--sh-fg);
+	--muted: var(--sh-border);
+	--muted-foreground: var(--sh-muted);
+	--accent: var(--sh-brand-tint);
+	--accent-foreground: var(--sh-brand);
+	--destructive: var(--sh-danger);
+	--border: var(--sh-border);
+	--input: var(--sh-border);
+	--ring: var(--sh-brand);
 }
 
 body {
 	background: var(--sh-bg);
 	color: var(--sh-fg);
+}
+
+@theme inline {
+	/* 字体: Inter(拉丁, 变量字体自托管) + 系统 CJK, 见 DESIGN.md 排版一节 */
+	--font-sans: 'Inter Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+	--font-heading: var(--font-sans);
+
+	--color-background: var(--background);
+	--color-foreground: var(--foreground);
+	--color-card: var(--card);
+	--color-card-foreground: var(--card-foreground);
+	--color-popover: var(--popover);
+	--color-popover-foreground: var(--popover-foreground);
+	--color-primary: var(--primary);
+	--color-primary-foreground: var(--primary-foreground);
+	--color-secondary: var(--secondary);
+	--color-secondary-foreground: var(--secondary-foreground);
+	--color-muted: var(--muted);
+	--color-muted-foreground: var(--muted-foreground);
+	--color-accent: var(--accent);
+	--color-accent-foreground: var(--accent-foreground);
+	--color-destructive: var(--destructive);
+	--color-border: var(--border);
+	--color-input: var(--input);
+	--color-ring: var(--ring);
+
+	--radius-sm: calc(var(--radius) * 0.6);
+	--radius-md: calc(var(--radius) * 0.8);
+	--radius-lg: var(--radius);
+	--radius-xl: calc(var(--radius) * 1.4);
+	--radius-2xl: calc(var(--radius) * 1.8);
+	--radius-3xl: calc(var(--radius) * 2.2);
+	--radius-4xl: calc(var(--radius) * 2.6);
+}
+
+@layer base {
+	* {
+		@apply border-border outline-ring/50;
+	}
+	body {
+		@apply bg-background text-foreground;
+	}
+	html {
+		@apply font-sans;
+	}
 }
