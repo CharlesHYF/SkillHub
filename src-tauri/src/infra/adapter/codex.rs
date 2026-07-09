@@ -1,24 +1,27 @@
-// 文件作用: Codex 适配器 —— 覆盖 Codex CLI 的探测(detect)与 MCP+Skill 实际态读取(read_state)。
-//           Codex 的配置文件是 `~/.codex/config.toml`, MCP 服务器登记在 `[mcp_servers.<name>]`
-//           表下(字段 command/args/env), 与其余 6 款 JSON mcpServers 工具的"顶层 JSON 挂字典"
-//           形态不同(TOML 语法 + 表名而非 JSON 对象键), 故不复用 JsonMcpAdapter, 单独实现。
-//           Skill 的落地读取(read_state.skills)已接入 skill_target(见 SkillTarget, Task 5),
-//           Codex 映射到 InstructionsFile("AGENTS.md")(见 adapter::mod::all_adapters); 落地
-//           写入(apply)留 Task 7, 本文件该方法仍先占位。
+// 文件作用: Codex 适配器 —— 覆盖 Codex CLI 的探测(detect)、MCP+Skill 实际态读取(read_state)
+//           与差异计划落地写入(apply)。Codex 的配置文件是 `~/.codex/config.toml`, MCP 服务器
+//           登记在 `[mcp_servers.<name>]` 表下(字段 command/args/env), 与其余 6 款 JSON
+//           mcpServers 工具的"顶层 JSON 挂字典"形态不同(TOML 语法 + 表名而非 JSON 对象键),
+//           故不复用 JsonMcpAdapter, 单独实现(apply 的"整份读入 -> 内存合并 -> 备份 -> 整份
+//           写回"策略与 JsonMcpAdapter 一致, 只是数据结构换成 toml::Table/Value)。
+//           Skill 的落地读写(read_state.skills/apply 里 Skill 项)已接入 skill_target(见
+//           SkillTarget, Task 5/7b), Codex 映射到 InstructionsFile("AGENTS.md")(见
+//           adapter::mod::all_adapters)。
 // 创建日期: 2026-07-09
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use toml::{Table, Value};
 
 use crate::domain::agent::{ActualState, AgentKind, AgentScope, DetectedAgent, McpServerDef};
 use crate::domain::resource::ResourceType;
-use crate::domain::sync::{DiffPlan, ItemOutcome};
+use crate::domain::sync::{DesiredPayload, DiffAction, DiffItem, DiffPlan, ItemOutcome};
 
 use super::skill_target::SkillTarget;
+use super::util::{apply_skill_item, backup_file, err_outcome, ok_outcome};
 use super::AgentAdapter;
 
 /// Codex 配置文件相对家目录的固定路径; 目前只有这一种已知形态(不像其余工具存在多操作系统
@@ -43,6 +46,69 @@ impl CodexAdapter {
 	fn config_path(&self) -> PathBuf {
 		self.home.join(CONFIG_REL_PATH)
 	}
+
+	/// 把本次 plan 里 res_type==Mcp 的若干 DiffItem 合并应用到同一份 config.toml: 先把整份
+	/// 文件读入内存(不存在则视为空表), 逐项在内存里对 mcp_servers 表做增/改/删, 全部处理完毕
+	/// 后统一备份 + 落盘一次(而非逐项各自备份写盘) —— 策略与 JsonMcpAdapter::apply_mcp_items
+	/// 一致, 只是数据结构换成 toml::Table/Value。单项 payload 形状不符(脏数据)不会中断其它项,
+	/// 只把该项标记为 ok=false 并记录 err; 读取/解析/备份/落盘这类影响全文件的失败则整体报错
+	/// (Err), 因为此时已无法保证任何一项真的落地成功
+	fn apply_mcp_items(&self, path: &Path, items: &[&DiffItem]) -> Result<Vec<ItemOutcome>> {
+		let mut root: Table = match fs::read_to_string(path) {
+			Ok(text) => text
+				.parse()
+				.with_context(|| format!("解析配置文件 TOML 失败: {}", path.display()))?,
+			Err(err) if err.kind() == std::io::ErrorKind::NotFound => Table::new(),
+			Err(err) => {
+				return Err(err).with_context(|| format!("读取配置文件失败: {}", path.display()))
+			}
+		};
+
+		let servers = root
+			.entry("mcp_servers")
+			.or_insert_with(|| Value::Table(Table::new()));
+		let Some(servers_table) = servers.as_table_mut() else {
+			anyhow::bail!("mcp_servers 不是 TOML 表: {}", path.display());
+		};
+
+		let mut outcomes = Vec::with_capacity(items.len());
+		let mut changed = false;
+		for item in items {
+			match (item.action, &item.payload) {
+				(DiffAction::Add, Some(DesiredPayload::Mcp(def)))
+				| (DiffAction::Update, Some(DesiredPayload::Mcp(def))) => {
+					servers_table.insert(item.name.clone(), mcp_def_to_toml(def));
+					changed = true;
+					outcomes.push(ok_outcome(item));
+				}
+				(DiffAction::Remove, _) => {
+					servers_table.remove(&item.name);
+					changed = true;
+					outcomes.push(ok_outcome(item));
+				}
+				(action, payload) => outcomes.push(err_outcome(
+					item,
+					format!(
+						"MCP 项 {} 的 action({action:?})与 payload 形状不符({payload:?})",
+						item.name
+					),
+				)),
+			}
+		}
+
+		if changed {
+			backup_file(path).with_context(|| format!("备份配置文件失败: {}", path.display()))?;
+			if let Some(parent) = path.parent() {
+				fs::create_dir_all(parent)
+					.with_context(|| format!("创建目录失败: {}", parent.display()))?;
+			}
+			let text = toml::to_string_pretty(&root).context("序列化配置文件失败")?;
+			fs::write(path, text)
+				.with_context(|| format!("写入配置文件失败: {}", path.display()))?;
+		}
+
+		Ok(outcomes)
+	}
 }
 
 impl AgentAdapter for CodexAdapter {
@@ -51,7 +117,7 @@ impl AgentAdapter for CodexAdapter {
 		AgentKind::Codex
 	}
 
-	/// Codex 可托管 MCP 与 Skill(Skill 的落地读取已接入 skill_target, 写入留 Task 7)
+	/// Codex 可托管 MCP 与 Skill(读取与写入均已接入, 见 read_state/apply)
 	fn supports(&self, ty: ResourceType) -> bool {
 		matches!(ty, ResourceType::Skill | ResourceType::Mcp)
 	}
@@ -99,10 +165,61 @@ impl AgentAdapter for CodexAdapter {
 		})
 	}
 
-	/// 写回配置文件留给 Task 7(声明式协调引擎与写入应用)实现
-	fn apply(&self, _agent: &DetectedAgent, _plan: &DiffPlan) -> Result<Vec<ItemOutcome>> {
-		todo!("Task 7 实现: 按 DiffPlan 写回配置文件, 写前对目标文件做时间戳备份")
+	/// 把 plan 里的每一项按 res_type 分派应用: Mcp 项合并进 config.toml(见 apply_mcp_items,
+	/// 内部只对该文件做一次备份 + 一次写回); Skill 项各自独立调用 skill_target.write_skill/
+	/// remove_skill(见 apply_skill_item), 与 Mcp 项的落地位置(AGENTS.md)互不相干。返回的
+	/// outcomes 顺序为"先 Mcp 项(按 items 原有顺序), 再 Skill 项(按 items 原有顺序)", 调用方
+	/// 应按 name 匹配而非依赖顺序
+	fn apply(&self, agent: &DetectedAgent, plan: &DiffPlan) -> Result<Vec<ItemOutcome>> {
+		let path = PathBuf::from(&agent.config_path);
+		let mut outcomes = Vec::new();
+
+		let mcp_items: Vec<&DiffItem> = plan
+			.items
+			.iter()
+			.filter(|item| item.res_type == ResourceType::Mcp)
+			.collect();
+		if !mcp_items.is_empty() {
+			outcomes.extend(self.apply_mcp_items(&path, &mcp_items)?);
+		}
+
+		for item in plan
+			.items
+			.iter()
+			.filter(|item| item.res_type == ResourceType::Skill)
+		{
+			outcomes.push(apply_skill_item(&self.skill_target, &self.home, item));
+		}
+
+		Ok(outcomes)
 	}
+}
+
+/// 把 McpServerDef 转为写回 config.toml 用的 TOML 表: 有 command 才写 command/args/env,
+/// 有 url 才写 url; args/env 为空时省略(保持配置文件简洁, 与 JsonMcpAdapter::mcp_def_to_json
+/// 的简洁策略一致)
+fn mcp_def_to_toml(def: &McpServerDef) -> Value {
+	let mut table = Table::new();
+	if let Some(command) = &def.command {
+		table.insert("command".to_string(), Value::String(command.clone()));
+	}
+	if !def.args.is_empty() {
+		table.insert(
+			"args".to_string(),
+			Value::Array(def.args.iter().cloned().map(Value::String).collect()),
+		);
+	}
+	if !def.env.is_empty() {
+		let mut env_table = Table::new();
+		for (key, val) in &def.env {
+			env_table.insert(key.clone(), Value::String(val.clone()));
+		}
+		table.insert("env".to_string(), Value::Table(env_table));
+	}
+	if let Some(url) = &def.url {
+		table.insert("url".to_string(), Value::String(url.clone()));
+	}
+	Value::Table(table)
 }
 
 /// 从配置文件根 TOML 取出 `mcp_servers` 表, 逐条转为 McpServerDef; 表名即服务器名。
@@ -373,5 +490,291 @@ mod tests {
 		assert!(state.mcp.is_empty());
 		assert_eq!(state.skills.len(), 1);
 		assert_eq!(state.skills[0].name, "demo-skill");
+	}
+
+	/// 构造一个 command 型 McpServerDef, env 固定为空, 供 apply 系列测试复用
+	fn mcp_def(name: &str, command: &str, args: &[&str]) -> McpServerDef {
+		McpServerDef {
+			name: name.to_string(),
+			command: Some(command.to_string()),
+			args: args.iter().map(|a| a.to_string()).collect(),
+			env: BTreeMap::new(),
+			url: None,
+		}
+	}
+
+	/// 构造一个 Add/Update 用的 Mcp 型 DiffItem
+	fn mcp_diff_item(action: DiffAction, name: &str, command: &str, args: &[&str]) -> DiffItem {
+		DiffItem {
+			res_type: ResourceType::Mcp,
+			name: name.to_string(),
+			action,
+			local_ver: String::new(),
+			agent_ver: String::new(),
+			payload: Some(DesiredPayload::Mcp(mcp_def(name, command, args))),
+		}
+	}
+
+	/// 构造一个 Remove 用的 Mcp 型 DiffItem(payload 恒为 None, 与 reconcile 产出的 Remove
+	/// 项形状一致)
+	fn mcp_remove_item(name: &str) -> DiffItem {
+		DiffItem {
+			res_type: ResourceType::Mcp,
+			name: name.to_string(),
+			action: DiffAction::Remove,
+			local_ver: String::new(),
+			agent_ver: String::new(),
+			payload: None,
+		}
+	}
+
+	fn probe_at(config_path: &std::path::Path) -> DetectedAgent {
+		DetectedAgent {
+			kind: AgentKind::Codex,
+			name: "Codex".to_string(),
+			config_path: config_path.to_string_lossy().into_owned(),
+			scope: AgentScope::Global,
+			online: true,
+		}
+	}
+
+	// apply: Add 一个新 MCP 服务器应写入配置文件, 且保留文件里用户自己的其它服务器
+	// (userSrv)与其它顶层键(model); 写入前应生成一份时间戳备份
+	#[test]
+	fn apply_add_writes_new_server_while_preserving_existing_content_and_backs_up() {
+		let dir = tempdir().unwrap();
+		let config_path = dir.path().join(".codex/config.toml");
+		fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+		fs::write(
+			&config_path,
+			"model = \"gpt-5\"\n\n[mcp_servers.userSrv]\ncommand = \"python\"\nargs = [\"server.py\"]\n",
+		)
+		.unwrap();
+
+		let adapter = CodexAdapter::new(
+			dir.path().to_path_buf(),
+			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
+		);
+		let probe = probe_at(&config_path);
+		let plan = DiffPlan {
+			items: vec![mcp_diff_item(
+				DiffAction::Add,
+				"newSrv",
+				"node",
+				&["index.js"],
+			)],
+		};
+
+		let outcomes = adapter.apply(&probe, &plan).unwrap();
+
+		assert_eq!(outcomes.len(), 1);
+		assert!(outcomes[0].ok, "err = {}", outcomes[0].err);
+		assert_eq!(outcomes[0].name, "newSrv");
+		assert_eq!(outcomes[0].action, DiffAction::Add);
+
+		let root: Table = fs::read_to_string(&config_path).unwrap().parse().unwrap();
+		assert_eq!(
+			root["mcp_servers"]["newSrv"]["command"].as_str(),
+			Some("node")
+		);
+		assert_eq!(
+			root["mcp_servers"]["userSrv"]["command"].as_str(),
+			Some("python")
+		);
+		assert_eq!(root["model"].as_str(), Some("gpt-5"));
+
+		let backups: Vec<_> = fs::read_dir(config_path.parent().unwrap())
+			.unwrap()
+			.filter_map(Result::ok)
+			.filter(|entry| entry.file_name().to_string_lossy().contains("skillhub-bak"))
+			.collect();
+		assert_eq!(backups.len(), 1, "写入前应生成一份备份");
+	}
+
+	// apply: Update 应把已存在的服务器内容改成新的 command/args, 且不影响其它服务器
+	#[test]
+	fn apply_update_changes_existing_server_content() {
+		let dir = tempdir().unwrap();
+		let config_path = dir.path().join(".codex/config.toml");
+		fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+		fs::write(
+			&config_path,
+			"[mcp_servers.userSrv]\ncommand = \"python\"\n\n[mcp_servers.target]\ncommand = \"node\"\nargs = [\"old.js\"]\n",
+		)
+		.unwrap();
+
+		let adapter = CodexAdapter::new(
+			dir.path().to_path_buf(),
+			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
+		);
+		let probe = probe_at(&config_path);
+		let plan = DiffPlan {
+			items: vec![mcp_diff_item(
+				DiffAction::Update,
+				"target",
+				"node",
+				&["new.js"],
+			)],
+		};
+
+		let outcomes = adapter.apply(&probe, &plan).unwrap();
+		assert!(outcomes[0].ok);
+
+		let root: Table = fs::read_to_string(&config_path).unwrap().parse().unwrap();
+		assert_eq!(
+			root["mcp_servers"]["target"]["args"][0].as_str(),
+			Some("new.js")
+		);
+		assert_eq!(
+			root["mcp_servers"]["userSrv"]["command"].as_str(),
+			Some("python")
+		);
+	}
+
+	// apply: Remove 应删掉目标服务器, 但保留用户自己的其它服务器(userSrv)
+	#[test]
+	fn apply_remove_deletes_target_server_keeping_others() {
+		let dir = tempdir().unwrap();
+		let config_path = dir.path().join(".codex/config.toml");
+		fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+		fs::write(
+			&config_path,
+			"[mcp_servers.userSrv]\ncommand = \"python\"\n\n[mcp_servers.toRemove]\ncommand = \"node\"\n",
+		)
+		.unwrap();
+
+		let adapter = CodexAdapter::new(
+			dir.path().to_path_buf(),
+			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
+		);
+		let probe = probe_at(&config_path);
+		let plan = DiffPlan {
+			items: vec![mcp_remove_item("toRemove")],
+		};
+
+		let outcomes = adapter.apply(&probe, &plan).unwrap();
+		assert!(outcomes[0].ok);
+		assert_eq!(outcomes[0].action, DiffAction::Remove);
+
+		let root: Table = fs::read_to_string(&config_path).unwrap().parse().unwrap();
+		assert!(root["mcp_servers"].get("toRemove").is_none());
+		assert_eq!(
+			root["mcp_servers"]["userSrv"]["command"].as_str(),
+			Some("python")
+		);
+	}
+
+	// apply: 配置文件不存在(全新安装, 尚未生成过配置)时应能创建文件与所需目录, Add 正常生效
+	#[test]
+	fn apply_add_creates_config_file_when_missing() {
+		let dir = tempdir().unwrap();
+		let adapter = CodexAdapter::new(
+			dir.path().to_path_buf(),
+			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
+		);
+		let config_path = dir.path().join(".codex/config.toml");
+		let probe = probe_at(&config_path);
+		let plan = DiffPlan {
+			items: vec![mcp_diff_item(
+				DiffAction::Add,
+				"newSrv",
+				"node",
+				&["index.js"],
+			)],
+		};
+
+		let outcomes = adapter.apply(&probe, &plan).unwrap();
+		assert!(outcomes[0].ok, "err = {}", outcomes[0].err);
+
+		let root: Table = fs::read_to_string(&config_path).unwrap().parse().unwrap();
+		assert_eq!(
+			root["mcp_servers"]["newSrv"]["command"].as_str(),
+			Some("node")
+		);
+	}
+
+	// apply: 单项失败不应中断其它项 —— 一个 payload 形状不符的坏项(Add 却没带 Mcp payload)
+	// 与一个正常好项同批应用, 好项应正常生效, 坏项应产出 ok=false 且带非空 err, 不影响好项
+	#[test]
+	fn apply_bad_item_does_not_block_good_item_in_same_plan() {
+		let dir = tempdir().unwrap();
+		let config_path = dir.path().join(".codex/config.toml");
+		fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+		fs::write(&config_path, "").unwrap();
+
+		let adapter = CodexAdapter::new(
+			dir.path().to_path_buf(),
+			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
+		);
+		let probe = probe_at(&config_path);
+		let bad_item = DiffItem {
+			res_type: ResourceType::Mcp,
+			name: "badSrv".to_string(),
+			action: DiffAction::Add,
+			local_ver: String::new(),
+			agent_ver: String::new(),
+			payload: None, // Add 却没带 payload, 属脏数据
+		};
+		let good_item = mcp_diff_item(DiffAction::Add, "goodSrv", "node", &["index.js"]);
+		let plan = DiffPlan {
+			items: vec![bad_item, good_item],
+		};
+
+		let outcomes = adapter.apply(&probe, &plan).unwrap();
+		assert_eq!(outcomes.len(), 2);
+
+		let bad_outcome = outcomes.iter().find(|o| o.name == "badSrv").unwrap();
+		assert!(!bad_outcome.ok);
+		assert!(!bad_outcome.err.is_empty());
+
+		let good_outcome = outcomes.iter().find(|o| o.name == "goodSrv").unwrap();
+		assert!(good_outcome.ok, "err = {}", good_outcome.err);
+
+		let root: Table = fs::read_to_string(&config_path).unwrap().parse().unwrap();
+		assert_eq!(
+			root["mcp_servers"]["goodSrv"]["command"].as_str(),
+			Some("node")
+		);
+		assert!(root["mcp_servers"].get("badSrv").is_none());
+	}
+
+	// apply: res_type==Skill 的项应分派给 skill_target.write_skill(InstructionsFile 形态),
+	// 与 MCP 项各自独立生效
+	#[test]
+	fn apply_skill_item_delegates_to_skill_target_write_skill() {
+		let dir = tempdir().unwrap();
+		let config_path = dir.path().join(".codex/config.toml");
+		fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+		fs::write(&config_path, "").unwrap();
+
+		let src_dir = dir.path().join("src-demo-skill");
+		fs::create_dir_all(&src_dir).unwrap();
+		fs::write(src_dir.join("SKILL.md"), "内容").unwrap();
+
+		let adapter = CodexAdapter::new(
+			dir.path().to_path_buf(),
+			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
+		);
+		let probe = probe_at(&config_path);
+		let plan = DiffPlan {
+			items: vec![DiffItem {
+				res_type: ResourceType::Skill,
+				name: "demo-skill".to_string(),
+				action: DiffAction::Add,
+				local_ver: "1.0.0".to_string(),
+				agent_ver: String::new(),
+				payload: Some(DesiredPayload::Skill {
+					src_dir: src_dir.to_string_lossy().into_owned(),
+				}),
+			}],
+		};
+
+		let outcomes = adapter.apply(&probe, &plan).unwrap();
+		assert_eq!(outcomes.len(), 1);
+		assert!(outcomes[0].ok, "err = {}", outcomes[0].err);
+
+		let agents_md = fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
+		assert!(agents_md.contains("<!-- skillhub:start:demo-skill@1.0.0 -->"));
+		assert!(agents_md.contains("内容"));
 	}
 }

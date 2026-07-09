@@ -9,6 +9,7 @@
 pub mod codex;
 pub mod json_mcp;
 pub mod skill_target;
+pub mod util;
 
 use std::path::{Path, PathBuf};
 
@@ -227,7 +228,7 @@ mod tests {
 
 	// all_adapters 累计应接入 8 款工具: Task 3 的 6 款 JSON mcpServers 在前, Task 4 追加的
 	// VS Code(仍是 JsonMcpAdapter)与 Codex(CodexAdapter)按注册顺序追加在后; 数量与种类应与
-	// 配置表逐一对应, 且每个都应同时声明支持 Mcp 与 Skill(Skill 落地读取已接入, 写入留 Task 7)
+	// 配置表逐一对应, 且每个都应同时声明支持 Mcp 与 Skill(读取与写入均已接入)
 	#[test]
 	fn all_adapters_registers_eight_tools_with_correct_kinds_and_support() {
 		let home = PathBuf::from("/tmp/skillhub-test-home");
