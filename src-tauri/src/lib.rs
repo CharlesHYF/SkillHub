@@ -1,6 +1,8 @@
 // 文件作用: Tauri Builder 装配入口(脚手架基线), 后续任务会在此接入 SQLite 与 commands
 // 创建日期: 2026-07-09
 
+mod infra;
+
 // 示例命令: 演示前端经 invoke() 调用 Rust 的链路是否打通, 后续任务会替换为真实业务命令
 // 了解更多: https://tauri.app/develop/calling-rust/
 #[tauri::command]
