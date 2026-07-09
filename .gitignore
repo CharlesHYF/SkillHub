@@ -1,0 +1,43 @@
+# --- 编译与构建 ---
+target/
+dist/
+build/
+out/
+*.class
+*.jar
+*.war
+*.exe
+*.dll
+
+# --- 依赖 ---
+node_modules/
+.pnpm-store/
+vendor/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# --- Go ---
+*.test
+*.out
+
+# --- 环境与 IDE ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# --- 日志 ---
+*.log
+logs/
+
+# --- Tauri ---
+src-tauri/gen/

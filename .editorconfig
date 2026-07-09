@@ -1,0 +1,27 @@
+# EditorConfig —— 统一编辑器的缩进 / 行尾 / 编码
+# 落地 charles-coding skill 的"编辑与格式"全局约定
+# https://editorconfig.org
+root = true
+
+# 默认：Tab 缩进、LF 行尾、UTF-8、去行尾空格、文件末尾留空行
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = tab
+indent_size = 4
+
+# 例外：Python / Kotlin 用 4 空格（PEP8 / Kotlin 官方风格）
+[*.{py,kt,kts}]
+indent_style = space
+indent_size = 4
+
+# 例外：SQL / YAML / JSON 用 2 空格
+[*.{sql,yml,yaml,json,jsonc}]
+indent_style = space
+indent_size = 2
+
+# Markdown：保留行尾空格（用于换行语义）
+[*.md]
+trim_trailing_whitespace = false
