@@ -29,6 +29,11 @@ toml = "1"
 # rustls-tls: 走纯 Rust TLS 实现(webpki 根证书), 不依赖系统 openssl
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 keyring = "4"
+# async_trait: 让 SourceProvider(infra::source)的 async fn 方法保持 dyn 对象安全,
+# 原生 async fn in trait 不支持 dyn 分派(见 infra/source/mod.rs 文件头注释)
+async-trait = "0.1"
+# base64: 解码 GitHub contents API 返回的 base64 文件内容(infra::source::github_skills)
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile = "3"
