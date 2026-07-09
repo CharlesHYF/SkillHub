@@ -126,6 +126,7 @@ CREATE TABLE setting (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,           -- 主键
   cfg_key       TEXT     NOT NULL DEFAULT '',                -- 配置键(<=64)
   cfg_value     TEXT     NOT NULL DEFAULT '',                -- 配置值(<=1024)
+  create_time   TEXT     NOT NULL DEFAULT (datetime('now')), -- 创建时间
   update_time   TEXT     NOT NULL DEFAULT (datetime('now'))  -- 更新时间
 );
 CREATE UNIQUE INDEX uk_setting_key ON setting (cfg_key);  -- 配置键唯一
