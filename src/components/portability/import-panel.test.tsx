@@ -18,6 +18,7 @@ const fullPreview: ImportPreview = { skill: 128, mcp: 45, config: 23, agent: 8, 
 
 function renderPanel(overrides: Partial<React.ComponentProps<typeof ImportPanel>> = {}) {
 	const onPathChange = vi.fn();
+	const onBrowseFile = vi.fn();
 	const onConflictStrategyChange = vi.fn();
 	const onAutoSyncChange = vi.fn();
 	const onStartImport = vi.fn();
@@ -26,6 +27,7 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof ImportPanel>
 			<ImportPanel
 				path=""
 				onPathChange={onPathChange}
+				onBrowseFile={onBrowseFile}
 				preview={undefined}
 				isPreviewLoading={false}
 				conflictStrategy={0}
@@ -38,7 +40,13 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof ImportPanel>
 			/>
 		</TooltipProvider>,
 	);
-	return { onPathChange, onConflictStrategyChange, onAutoSyncChange, onStartImport };
+	return {
+		onPathChange,
+		onBrowseFile,
+		onConflictStrategyChange,
+		onAutoSyncChange,
+		onStartImport,
+	};
 }
 
 describe('ImportPanel', () => {
@@ -51,12 +59,21 @@ describe('ImportPanel', () => {
 		} as unknown as ReturnType<typeof getCurrentWebview>);
 	});
 
-	it('应渲染导入标题、拖拽区提示与禁用的选择文件按钮(原生对话框留后续)', () => {
+	it('应渲染导入标题、拖拽区提示与可点击的选择文件按钮', () => {
 		renderPanel();
 		expect(screen.getByText('导入 Import')).toBeInTheDocument();
 		expect(screen.getByText(/拖拽文件到此处/)).toBeInTheDocument();
 		expect(screen.getByText(/支持 zip、json、tar/)).toBeInTheDocument();
-		expect(screen.getByRole('button', { name: /选择文件/ })).toBeDisabled();
+		expect(screen.getByRole('button', { name: /选择文件/ })).toBeEnabled();
+	});
+
+	it('点击"选择文件"应调用 onBrowseFile', async () => {
+		const user = userEvent.setup();
+		const { onBrowseFile } = renderPanel();
+
+		await user.click(screen.getByRole('button', { name: /选择文件/ }));
+
+		expect(onBrowseFile).toHaveBeenCalled();
 	});
 
 	it('未选择路径时不应展示预览计数', () => {

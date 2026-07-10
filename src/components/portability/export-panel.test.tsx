@@ -19,6 +19,7 @@ const baseOptions: ExportOptions = {
 function renderPanel(overrides: Partial<React.ComponentProps<typeof ExportPanel>> = {}) {
 	const onOptionsChange = vi.fn();
 	const onOutPathChange = vi.fn();
+	const onBrowseOutPath = vi.fn();
 	const onExport = vi.fn();
 	render(
 		<TooltipProvider>
@@ -27,13 +28,14 @@ function renderPanel(overrides: Partial<React.ComponentProps<typeof ExportPanel>
 				onOptionsChange={onOptionsChange}
 				outPath=""
 				onOutPathChange={onOutPathChange}
+				onBrowseOutPath={onBrowseOutPath}
 				onExport={onExport}
 				isExporting={false}
 				{...overrides}
 			/>
 		</TooltipProvider>,
 	);
-	return { onOptionsChange, onOutPathChange, onExport };
+	return { onOptionsChange, onOutPathChange, onBrowseOutPath, onExport };
 }
 
 describe('ExportPanel', () => {
@@ -101,6 +103,15 @@ describe('ExportPanel', () => {
 		await user.type(screen.getByPlaceholderText(/导出文件/), 'a');
 
 		expect(onOutPathChange).toHaveBeenCalled();
+	});
+
+	it('点击"选择保存位置"应调用 onBrowseOutPath', async () => {
+		const user = userEvent.setup();
+		const { onBrowseOutPath } = renderPanel();
+
+		await user.click(screen.getByRole('button', { name: /选择保存位置/ }));
+
+		expect(onBrowseOutPath).toHaveBeenCalled();
 	});
 
 	it('点击"一键导出全部"应调用 onExport', async () => {

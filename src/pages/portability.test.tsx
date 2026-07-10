@@ -1,6 +1,7 @@
-// 文件作用: Portability 页面集成测试(mock src/api/portability 与 @tauri-apps/api/webview) ——
-//           默认导出选项 + 一键导出全部触发 exportBundle/输入导入路径触发 importPreview 渲染计数/
-//           选择冲突策略后开始导入触发 importBundle/历史表渲染 impexpHistory 结果
+// 文件作用: Portability 页面集成测试(mock src/api/portability、@tauri-apps/api/webview 与
+//           src/lib/dialog) —— 默认导出选项 + 一键导出全部触发 exportBundle/输入导入路径触发
+//           importPreview 渲染计数/选择冲突策略后开始导入触发 importBundle/历史表渲染
+//           impexpHistory 结果/"选择保存位置""选择文件"两个原生对话框入口
 // 创建日期: 2026-07-10
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -29,7 +30,13 @@ vi.mock('@/api/portability', () => ({
 	impexpHistory: vi.fn(),
 }));
 
+vi.mock('@/lib/dialog', () => ({
+	pickSaveFile: vi.fn(),
+	pickOpenFile: vi.fn(),
+}));
+
 import { exportBundle, importPreview, importBundle, impexpHistory } from '@/api/portability';
+import { pickSaveFile, pickOpenFile } from '@/lib/dialog';
 
 const defaultExportOptions: ExportOptions = {
 	includeSkills: true,
@@ -73,6 +80,8 @@ describe('Portability 页面', () => {
 				status: 1,
 			} satisfies ImportOutcome);
 		vi.mocked(impexpHistory).mockReset().mockResolvedValue([]);
+		vi.mocked(pickSaveFile).mockReset().mockResolvedValue(null);
+		vi.mocked(pickOpenFile).mockReset().mockResolvedValue(null);
 	});
 
 	it('应渲染标题、导出/导入面板与历史表', async () => {
@@ -100,6 +109,76 @@ describe('Portability 页面', () => {
 		await user.click(screen.getByRole('button', { name: /一键导出全部/ }));
 
 		expect(exportBundle).toHaveBeenCalledWith({ ...defaultExportOptions, format: 2 }, '');
+	});
+
+	it('点击"选择保存位置"应以默认(zip)格式过滤器调用 pickSaveFile, 结果写入导出目标路径', async () => {
+		const user = userEvent.setup();
+		vi.mocked(pickSaveFile).mockResolvedValue('/Users/demo/skillhub_backup.zip');
+		renderPortability();
+
+		await user.click(screen.getByRole('button', { name: /选择保存位置/ }));
+
+		expect(pickSaveFile).toHaveBeenCalledWith({
+			filters: [{ name: '导出包 (.zip)', extensions: ['zip'] }],
+		});
+		await waitFor(() =>
+			expect(screen.getByPlaceholderText(/导出文件/)).toHaveValue(
+				'/Users/demo/skillhub_backup.zip',
+			),
+		);
+	});
+
+	it('切换导出格式为 json 后点击"选择保存位置"应以 json 过滤器调用 pickSaveFile', async () => {
+		const user = userEvent.setup();
+		renderPortability();
+
+		await user.click(screen.getByRole('radio', { name: 'json' }));
+		await user.click(screen.getByRole('button', { name: /选择保存位置/ }));
+
+		expect(pickSaveFile).toHaveBeenCalledWith({
+			filters: [{ name: '导出包 (.json)', extensions: ['json'] }],
+		});
+	});
+
+	it('"选择保存位置"取消(pickSaveFile 返回 null)不应改变导出目标路径', async () => {
+		const user = userEvent.setup();
+		renderPortability();
+
+		await user.click(screen.getByRole('button', { name: /选择保存位置/ }));
+
+		await waitFor(() => expect(pickSaveFile).toHaveBeenCalled());
+		expect(screen.getByPlaceholderText(/导出文件/)).toHaveValue('');
+	});
+
+	it('点击"选择文件"应调用 pickOpenFile, 结果写入导入路径并触发 importPreview', async () => {
+		const user = userEvent.setup();
+		vi.mocked(pickOpenFile).mockResolvedValue('/mock/skillhub_backup.zip');
+		renderPortability();
+
+		await user.click(screen.getByRole('button', { name: /选择文件/ }));
+
+		expect(pickOpenFile).toHaveBeenCalledWith({
+			filters: [{ name: '导入包', extensions: ['zip', 'json', 'tar', 'gz'] }],
+		});
+		await waitFor(() =>
+			expect(screen.getByPlaceholderText(/完整路径/)).toHaveValue(
+				'/mock/skillhub_backup.zip',
+			),
+		);
+		await waitFor(() =>
+			expect(importPreview).toHaveBeenCalledWith('/mock/skillhub_backup.zip'),
+		);
+		expect(await screen.findByText('128')).toBeInTheDocument();
+	});
+
+	it('"选择文件"取消(pickOpenFile 返回 null)不应改变导入路径', async () => {
+		const user = userEvent.setup();
+		renderPortability();
+
+		await user.click(screen.getByRole('button', { name: /选择文件/ }));
+
+		await waitFor(() => expect(pickOpenFile).toHaveBeenCalled());
+		expect(screen.getByPlaceholderText(/完整路径/)).toHaveValue('');
 	});
 
 	it('在导入路径输入框填入路径应触发 importPreview 并渲染计数', async () => {

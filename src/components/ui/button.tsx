@@ -42,20 +42,21 @@ const buttonVariants = cva(
 	},
 );
 
-function Button({
-	className,
-	variant = 'default',
-	size = 'default',
-	asChild = false,
-	...props
-}: React.ComponentProps<'button'> &
-	VariantProps<typeof buttonVariants> & {
-		asChild?: boolean;
-	}) {
+// 用 React.forwardRef 转发 ref: 修复前是普通函数组件, 给 Button 传 ref(或经 Radix Slot 的
+// asChild 场景合并 ref 到子元素)时 React 会告警"Function components cannot be given refs"且
+// ref 实际拿不到 DOM 节点; asChild=true 时 Comp 为 Slot.Root, ref 由其合并转发到被合并的子元素
+const Button = React.forwardRef<
+	HTMLButtonElement,
+	React.ComponentProps<'button'> &
+		VariantProps<typeof buttonVariants> & {
+			asChild?: boolean;
+		}
+>(({ className, variant = 'default', size = 'default', asChild = false, ...props }, ref) => {
 	const Comp = asChild ? Slot.Root : 'button';
 
 	return (
 		<Comp
+			ref={ref}
 			data-slot="button"
 			data-variant={variant}
 			data-size={size}
@@ -63,6 +64,7 @@ function Button({
 			{...props}
 		/>
 	);
-}
+});
+Button.displayName = 'Button';
 
 export { Button, buttonVariants };

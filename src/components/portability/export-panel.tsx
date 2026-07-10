@@ -1,8 +1,9 @@
 // 文件作用: 导入导出界面左侧"导出 Export"面板 —— 导出内容勾选、范围/格式/是否含配置/是否含
-//           版本锁定单选、目标路径输入(M3 用文本框占位, 原生保存对话框留后续)、一键导出按钮;
-//           纯展示 + 回调, 数据与提交由 pages/portability 统一持有
+//           版本锁定单选、目标路径输入(文本框可直接输入, 亦可点"选择保存位置"经原生保存对话框
+//           拿路径, 由 pages/portability 接 src/lib/dialog.ts 的 pickSaveFile 后回填)、一键导出
+//           按钮; 纯展示 + 回调, 数据与提交由 pages/portability 统一持有
 // 创建日期: 2026-07-10
-import { CircleHelp, Download } from 'lucide-react';
+import { CircleHelp, Download, FolderOpen } from 'lucide-react';
 
 import type { ExportOptions } from '@/api/portability';
 import { FORMAT_OPTIONS, SCOPE_OPTIONS } from './impexp-display';
@@ -16,9 +17,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 interface ExportPanelProps {
 	options: ExportOptions;
 	onOptionsChange: (options: ExportOptions) => void;
-	/** 导出目标路径(M3 文本输入占位, 原生保存对话框留后续) */
+	/** 导出目标路径(可直接在文本框输入, 或点"选择保存位置"经原生对话框拿路径后回填) */
 	outPath: string;
 	onOutPathChange: (path: string) => void;
+	/** "选择保存位置"按钮点击回调, 由 pages/portability 接 dialog.ts 的 pickSaveFile 实现 */
+	onBrowseOutPath: () => void;
 	onExport: () => void;
 	isExporting: boolean;
 }
@@ -43,6 +46,7 @@ export function ExportPanel({
 	onOptionsChange,
 	outPath,
 	onOutPathChange,
+	onBrowseOutPath,
 	onExport,
 	isExporting,
 }: ExportPanelProps) {
@@ -178,12 +182,19 @@ export function ExportPanel({
 					<label htmlFor="export-out-path" className="text-sm text-muted-foreground">
 						导出目标路径
 					</label>
-					<Input
-						id="export-out-path"
-						value={outPath}
-						onChange={(e) => onOutPathChange(e.target.value)}
-						placeholder="请输入导出文件的保存路径, 如 /Users/name/skillhub_backup.zip"
-					/>
+					<div className="flex items-center gap-2">
+						<Input
+							id="export-out-path"
+							value={outPath}
+							onChange={(e) => onOutPathChange(e.target.value)}
+							placeholder="请输入导出文件的保存路径, 如 /Users/name/skillhub_backup.zip"
+							className="flex-1"
+						/>
+						<Button variant="outline" onClick={onBrowseOutPath}>
+							<FolderOpen size={14} />
+							选择保存位置
+						</Button>
+					</div>
 				</div>
 
 				<Button className="mt-auto w-full" onClick={onExport} disabled={isExporting}>
