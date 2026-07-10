@@ -34,6 +34,9 @@ keyring = "4"
 async-trait = "0.1"
 # base64: 解码 GitHub contents API 返回的 base64 文件内容(infra::source::github_skills)
 base64 = "0.22"
+# futures: join_all 并发聚合市场三源的 search 调用(services::market::refresh); 已由 reqwest/
+# tauri 的传递依赖间接锁定 0.3.32, 此处提升为直接依赖以便在自身代码里 use
+futures = "0.3"
 
 [dev-dependencies]
 tempfile = "3"

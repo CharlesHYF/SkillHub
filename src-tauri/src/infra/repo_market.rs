@@ -1,6 +1,7 @@
-// 文件作用: market_cache 表仓储 —— upsert_many/query/get/etag_for, 显式列名/禁 SELECT */
-//           全参数化查询(阿里巴巴泰山版数据库规约); queryable 列落库供过滤/排序, 完整记录
-//           整份序列化进 raw_json 供还原(见 migrations/0001_init.sql market_cache 表注释)
+// 文件作用: market_cache 表仓储 —— upsert_many/query/get/etag_for/set_etag, 显式列名/禁
+//           SELECT */全参数化查询(阿里巴巴泰山版数据库规约); queryable 列落库供过滤/排序,
+//           完整记录整份序列化进 raw_json 供还原(见 migrations/0001_init.sql market_cache
+//           表注释)
 // 创建日期: 2026-07-09
 
 use rusqlite::{named_params, params, Connection, OptionalExtension, Row};
@@ -141,6 +142,22 @@ pub fn etag_for(conn: &Connection, source_type: i64) -> rusqlite::Result<Option<
 		|row| row.get(0),
 	)
 	.optional()
+}
+
+/// 写入某来源当前的 etag(供未来增量刷新发起 If-None-Match), 更新该来源下 fetch_time 最新的
+/// 一行(与 etag_for 的读取口径一致, 见其文档), 返回受影响行数; 该来源尚无任何缓存行时为空
+/// 操作(找不到可更新的行, 不报错, 返回 0)。当前尚无调用方: SourceProvider::search 还没有把
+/// HTTP 响应携带的 etag 透传给调用方(见 services::market::refresh 文件头注释"关于 etag"
+/// 一节), 打通这条链路超出 M2 Task 6 的范围; 本函数是为后续任务预留的最小落库原语, 与
+/// etag_for 对称
+pub fn set_etag(conn: &Connection, source_type: i64, etag: &str) -> rusqlite::Result<usize> {
+	conn.execute(
+		"UPDATE market_cache SET etag = ?1 WHERE id = ( \
+		 SELECT id FROM market_cache WHERE source_type = ?2 \
+		 ORDER BY fetch_time DESC, id DESC LIMIT 1 \
+		 )",
+		params![etag, source_type],
+	)
 }
 
 #[cfg(test)]
@@ -417,5 +434,28 @@ mod tests {
 			etag_for(&conn, i64::from(SourceId::GithubSkills)).unwrap(),
 			Some("W/\"abc123\"".to_string())
 		);
+	}
+
+	// set_etag: 应更新该来源下 fetch_time 最新一行的 etag 列, etag_for 应能读到新值
+	#[test]
+	fn set_etag_then_etag_for_round_trips_value() {
+		let conn = setup_conn();
+		upsert_many(&conn, &[sample_market_resource("ext-1")]).unwrap();
+
+		let affected = set_etag(&conn, i64::from(SourceId::GithubSkills), "W/\"abc123\"").unwrap();
+
+		assert_eq!(affected, 1);
+		assert_eq!(
+			etag_for(&conn, i64::from(SourceId::GithubSkills)).unwrap(),
+			Some("W/\"abc123\"".to_string())
+		);
+	}
+
+	// set_etag: 该来源尚无任何缓存行时应为空操作(受影响行数 0), 不报错
+	#[test]
+	fn set_etag_is_noop_when_source_has_no_rows() {
+		let conn = setup_conn();
+		let affected = set_etag(&conn, i64::from(SourceId::GithubSkills), "W/\"abc123\"").unwrap();
+		assert_eq!(affected, 0);
 	}
 }

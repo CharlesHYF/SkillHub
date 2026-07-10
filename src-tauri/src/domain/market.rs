@@ -96,6 +96,28 @@ pub enum SortBy {
 	Updated,
 }
 
+impl SortBy {
+	/// 由前端传入的排序编码(见本类型文档的编码约定)还原枚举; 未知值兜底为最小合法编码
+	/// Recommended(0), 与 SourceId/ResourceType/ProviderKind 的既有 from_i64 惯例一致
+	pub fn from_i64(value: i64) -> Self {
+		match value {
+			1 => SortBy::Stars,
+			2 => SortBy::Updated,
+			_ => SortBy::Recommended,
+		}
+	}
+}
+
+impl From<SortBy> for i64 {
+	fn from(value: SortBy) -> i64 {
+		match value {
+			SortBy::Recommended => 0,
+			SortBy::Stars => 1,
+			SortBy::Updated => 2,
+		}
+	}
+}
+
 /// 市场查询参数: 关键字(匹配 name/author)/类型/分类均可选, 不填表示不过滤该维度
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -130,6 +152,24 @@ mod tests {
 	fn source_id_from_i64_unknown_value_falls_back_to_github_skills() {
 		assert_eq!(SourceId::from_i64(0), SourceId::GithubSkills);
 		assert_eq!(SourceId::from_i64(99), SourceId::GithubSkills);
+	}
+
+	// SortBy: 已知值双向互转应精确对应枚举变体
+	#[test]
+	fn sort_by_from_i64_known_values_round_trip() {
+		assert_eq!(SortBy::from_i64(0), SortBy::Recommended);
+		assert_eq!(SortBy::from_i64(1), SortBy::Stars);
+		assert_eq!(SortBy::from_i64(2), SortBy::Updated);
+		assert_eq!(i64::from(SortBy::Recommended), 0);
+		assert_eq!(i64::from(SortBy::Stars), 1);
+		assert_eq!(i64::from(SortBy::Updated), 2);
+	}
+
+	// SortBy: 未知值(脏数据)兜底为最小合法编码 Recommended, 不 panic
+	#[test]
+	fn sort_by_from_i64_unknown_value_falls_back_to_recommended() {
+		assert_eq!(SortBy::from_i64(-1), SortBy::Recommended);
+		assert_eq!(SortBy::from_i64(99), SortBy::Recommended);
 	}
 
 	fn sample_mcp_server_def() -> McpServerDef {

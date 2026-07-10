@@ -62,6 +62,9 @@ pub fn run() {
 			commands::sync::resource_agent_links,
 			commands::dashboard::dashboard_summary,
 			commands::dashboard::activity_recent,
+			commands::market::market_search,
+			commands::market::market_detail,
+			commands::market::market_refresh,
 		])
 		.run(tauri::generate_context!())
 		.expect("运行 Tauri 应用失败");
