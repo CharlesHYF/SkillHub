@@ -145,6 +145,23 @@ pub struct ImportPreview {
 	pub schema_ok: bool,
 }
 
+/// 导入结果统计: import_bundle 命令返回给前端的落地计数与整体状态。imported/skipped/renamed
+/// 三者互斥且加总等于本次导入包含的资源总数(见 services::portability::import_bundle 对三种
+/// ConflictStrategy 的处理: Overwrite 恒计入 imported; Skip 命中已存在同名资源计入 skipped,
+/// 否则计入 imported; KeepBoth 命中冲突改名后落地计入 renamed, 否则计入 imported)。
+/// status: 1-成功, 2-部分成功(如 agents.json 记录的某条关联在本机找不到同名 Agent, 尽力恢复
+/// 未能全部达成), 与 import_export_log.status 列同一套编码(见 infra::repo_impexp), 但本类型
+/// 不产出 0-失败取值 —— 解析/校验阶段的硬失败(schema 不兼容/校验和不符等)在 parse_bundle 阶段
+/// 就已经整体 Err, 根本不会走到产出 ImportOutcome 这一步
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportOutcome {
+	pub imported: i64,
+	pub skipped: i64,
+	pub renamed: i64,
+	pub status: i64,
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -278,5 +295,25 @@ mod tests {
 		let text = serde_json::to_string(&preview).unwrap();
 		let back: ImportPreview = serde_json::from_str(&text).unwrap();
 		assert_eq!(back, preview);
+	}
+
+	// ImportOutcome: 序列化应使用 camelCase(与其它三个字段同风格), 且能 JSON 往返还原
+	#[test]
+	fn import_outcome_round_trips_through_json_with_camel_case_fields() {
+		let outcome = ImportOutcome {
+			imported: 3,
+			skipped: 1,
+			renamed: 2,
+			status: 2,
+		};
+		let json = serde_json::to_value(&outcome).unwrap();
+		assert_eq!(json["imported"], 3);
+		assert_eq!(json["skipped"], 1);
+		assert_eq!(json["renamed"], 2);
+		assert_eq!(json["status"], 2);
+
+		let text = serde_json::to_string(&outcome).unwrap();
+		let back: ImportOutcome = serde_json::from_str(&text).unwrap();
+		assert_eq!(back, outcome);
 	}
 }

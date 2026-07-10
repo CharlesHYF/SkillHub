@@ -1,16 +1,22 @@
-// 文件作用: 导入导出相关 Tauri 命令(导出 + 导入预览部分) —— export_bundle/import_preview 只负责
-//           加锁取出 conn/data_dir(如需要)与错误类型转换(anyhow::Error -> String, 与仓库其它
-//           命令的既有惯例一致), 具体逻辑见 services::portability。均为纯同步命令(无网络 I/O),
-//           全程持锁即可, 不涉及 commands::market 那种因 await 产生的 Send 拆分顾虑
+// 文件作用: 导入导出相关 Tauri 命令(导出 + 导入预览 + 导入应用) —— export_bundle/import_preview/
+//           import_bundle 只负责加锁取出 conn/data_dir(如需要)与错误类型转换(anyhow::Error ->
+//           String, 与仓库其它命令的既有惯例一致), 具体逻辑见 services::portability。均为纯
+//           同步命令(无网络 I/O): apply_for_agent(import_bundle 的 auto_sync 分支所依赖)全程
+//           无 await, 不涉及 commands::market 那种因网络 I/O 产生的 !Send 拆分顾虑, 全程一次
+//           加锁即可
 // 创建日期: 2026-07-10
 
 use std::path::Path;
 
 use tauri::State;
 
-use crate::domain::portability::{ExportOptions, ImportPreview, Manifest};
+use crate::domain::portability::{
+	ConflictStrategy, ExportOptions, ImportOutcome, ImportPreview, Manifest,
+};
 use crate::services::portability;
 use crate::AppState;
+
+use super::home_dir;
 
 /// 导出打包: 按 options 收集资源/配置/关联并打包到 out_path(前端经保存对话框选定的绝对路径,
 /// M3 前端可先用固定/输入路径占位, 真实文件对话框留待接入 tauri-plugin-dialog 或等价方案),
@@ -39,4 +45,38 @@ pub fn export_bundle(
 pub fn import_preview(_state: State<'_, AppState>, path: String) -> Result<ImportPreview, String> {
 	let parsed = portability::parse_bundle(Path::new(&path)).map_err(|e| e.to_string())?;
 	Ok(portability::preview(&parsed))
+}
+
+/// 导入应用: 解析并校验 path 指向的导入包(见 services::portability::parse_bundle), 按
+/// strategy(0-覆盖/1-跳过/2-保留两者, 见 domain::portability::ConflictStrategy)落地到本地库
+/// 与 data_dir(见 services::portability::import_bundle); auto_sync=true 时额外对本机全部
+/// 在线 Agent 触发一次同步应用(见 services::portability::sync_online_agents)。与前端 api 层
+/// 的契约为 import_bundle{path,strategy,autoSync}->ImportOutcome(见 progress.md M3 契约
+/// 记录)。同步是导入完成后锦上添花的附加动作, 其结果不影响本命令的返回值 —— 即便 auto_sync
+/// 过程中有 Agent 应用失败, 只要导入本身成功就照常返回 ImportOutcome, 不因同步的问题回退已经
+/// 落地的导入结果(sync_online_agents 内部也已对单 Agent 失败做了静默跳过, 见其文档)
+#[tauri::command]
+pub fn import_bundle(
+	state: State<'_, AppState>,
+	path: String,
+	strategy: i64,
+	auto_sync: bool,
+) -> Result<ImportOutcome, String> {
+	let parsed = portability::parse_bundle(Path::new(&path)).map_err(|e| e.to_string())?;
+
+	let conn = state.db();
+	let outcome = portability::import_bundle(
+		&conn,
+		&state.data_dir,
+		parsed,
+		ConflictStrategy::from_i64(strategy),
+	)
+	.map_err(|e| e.to_string())?;
+
+	if auto_sync {
+		let home = home_dir()?;
+		let _ = portability::sync_online_agents(&conn, &home);
+	}
+
+	Ok(outcome)
 }

@@ -21,7 +21,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Cursor, Read, Write as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
@@ -35,12 +35,17 @@ use sha2::{Digest, Sha256};
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
-use crate::domain::portability::{BundleFormat, Counts, ExportOptions, ImportPreview, Manifest};
-use crate::domain::resource::{Resource, ResourceType};
+use crate::domain::portability::{
+	BundleFormat, ConflictStrategy, Counts, ExportOptions, ImportOutcome, ImportPreview, Manifest,
+};
+use crate::domain::resource::{Resource, ResourceType, SourceType};
+use crate::infra::adapter::skill_target::parse_frontmatter_version;
+use crate::infra::repo_agent;
 use crate::infra::repo_assoc;
 use crate::infra::repo_impexp;
 use crate::infra::repo_resource::{self, ListFilter};
 use crate::infra::repo_setting;
+use crate::services::sync;
 
 /// 内存态待打包文件: 已读入内存的归档内相对路径(以 '/' 分隔, 不含 manifest.json 本身, 因为
 /// manifest 本身依赖全部其它文件先收集完毕才能算出 checksums, 无法把自身包含进自己的校验和里)
@@ -449,6 +454,11 @@ const MAX_TOTAL_BUNDLE_BYTES: u64 = 300 * 1024 * 1024;
 pub struct ParsedBundle {
 	pub manifest: Manifest,
 	pub entries: BTreeMap<String, Vec<u8>>,
+	/// 导入包原始文件名(取自路径的 file_name, 取不到则为空串), 供 import_bundle(M3 Task 4)落地
+	/// 时写入 import_export_log.file_name, 与 export_bundle 写入该列的既有惯例对称(见其文档)
+	pub source_file_name: String,
+	/// 导入包识别出的归档格式, 供 import_bundle(M3 Task 4)落地时写入 import_export_log.file_format
+	pub source_format: BundleFormat,
 }
 
 /// 导入包三种受支持的归档格式, 对应 domain::portability::BundleFormat 的三个变体。单独建这个
@@ -737,7 +747,22 @@ pub fn parse_bundle(path: &Path) -> Result<ParsedBundle> {
 
 	validate_bundle(&manifest, &entries)?;
 
-	Ok(ParsedBundle { manifest, entries })
+	let source_file_name = path
+		.file_name()
+		.map(|s| s.to_string_lossy().into_owned())
+		.unwrap_or_default();
+	let source_format = match format {
+		DetectedFormat::Zip => BundleFormat::Zip,
+		DetectedFormat::Tar => BundleFormat::Tar,
+		DetectedFormat::Json => BundleFormat::Json,
+	};
+
+	Ok(ParsedBundle {
+		manifest,
+		entries,
+		source_file_name,
+		source_format,
+	})
 }
 
 /// 由已通过校验的 ParsedBundle 生成"将导入内容"面板所需的预览: counts 直接取 manifest 已有统计
@@ -756,6 +781,417 @@ pub fn preview(parsed: &ParsedBundle) -> ImportPreview {
 	}
 }
 
+// ============================================================================
+// 导入落地(M3 Task 4): 按 ConflictStrategy 把已解析且通过校验的 ParsedBundle 落地到 data_dir
+// 与数据库 —— 内容路径分组(group_import_items, export_bundle 产出路径形状的精确逆过程)→
+// 逐资源按策略落地(Overwrite 覆盖同名既有记录+内容; Skip 命中已存在同名资源则整体不动;
+// KeepBoth 命中冲突则改名 `<name>-imported`/`-imported-2`… 后另起一行落地)→ 可选恢复
+// settings.json/agents.json → 写 import_export_log(direction=1)。均不使用显式事务(与本仓库
+// 其它多步落库操作同一既有取舍, 见 services::market::write_installed/services::library::
+// import_local 均未包一层事务), 中途硬错误(如磁盘写入失败)会整体返回 Err 且不写历史记录,
+// 但此前已落地的部分内容/数据库变更不会被回滚。
+// ============================================================================
+
+/// 分组后的一个待落地资源: 由 group_import_items 从 entries 的路径形状反推得到, name/res_type
+/// 均为导入包记录的原始名称(改名与否留给 import_bundle 主循环按策略决定, 本类型不关心)
+struct ImportItem {
+	res_type: ResourceType,
+	name: String,
+	/// Skill: 该资源内部各文件相对其自身根目录的路径(如 "SKILL.md"/"scripts/run.sh") -> 内容,
+	/// 可能多个; Mcp: 恒只有一个元素, 相对路径固定为空串占位(用不上, 见 land_mcp_content 只
+	/// 取内容本身)
+	files: Vec<(String, Vec<u8>)>,
+}
+
+/// 从已解析导入包的 entries 里按 "skills/<name>/..." 与 "mcp/<name>.json" 两种既定路径形状,
+/// 重新分组出每个资源各自的文件集合, 是 export_bundle 产出路径(bundle_root_rel_path/
+/// collect_dir_files/collect_single_file)的精确逆过程; settings.json/agents.json 两个根级
+/// 元数据文件不属于任何资源, 调用方应在调用本函数前先从 entries 里取出(见 import_bundle),
+/// 本函数只按路径前缀匹配, 不识别的路径(理论不会出现, entries 已在 validate_bundle 阶段与
+/// manifest.checksums 逐一核对过)静默忽略, 不视为错误。返回顺序按资源名升序(源 BTreeMap 迭代
+/// 顺序天然有序), Skill 排在 Mcp 之前, 与 export_bundle 收集顺序一致, 便于结果确定可预期
+fn group_import_items(entries: BTreeMap<String, Vec<u8>>) -> Vec<ImportItem> {
+	let mut skills: BTreeMap<String, Vec<(String, Vec<u8>)>> = BTreeMap::new();
+	let mut mcps: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+
+	for (path, bytes) in entries {
+		if let Some(rest) = path.strip_prefix("skills/") {
+			if let Some((name, inner_rel)) = rest.split_once('/') {
+				skills
+					.entry(name.to_string())
+					.or_default()
+					.push((inner_rel.to_string(), bytes));
+			}
+		} else if let Some(rest) = path.strip_prefix("mcp/") {
+			if let Some(name) = rest.strip_suffix(".json") {
+				if !name.contains('/') {
+					mcps.insert(name.to_string(), bytes);
+				}
+			}
+		}
+	}
+
+	let mut items: Vec<ImportItem> = Vec::new();
+	for (name, files) in skills {
+		items.push(ImportItem {
+			res_type: ResourceType::Skill,
+			name,
+			files,
+		});
+	}
+	for (name, bytes) in mcps {
+		items.push(ImportItem {
+			res_type: ResourceType::Mcp,
+			name,
+			files: vec![(String::new(), bytes)],
+		});
+	}
+	items
+}
+
+/// 按 (res_type, name) 精确查找既有资源(区别于 repo_resource::ListFilter.keyword 的模糊匹配):
+/// 直接复用 repo_resource::list 按类型过滤后在内存里找精确同名项, 不新增仓储层方法 —— 依赖
+/// uk_resource_type_name 唯一索引, 至多命中一条
+fn find_existing_resource(
+	conn: &Connection,
+	res_type: ResourceType,
+	name: &str,
+) -> Result<Option<Resource>> {
+	Ok(repo_resource::list(
+		conn,
+		&ListFilter {
+			res_type: Some(res_type),
+			keyword: None,
+		},
+	)?
+	.into_iter()
+	.find(|r| r.name == name))
+}
+
+/// 为 KeepBoth 策略计算一个不冲突的新名称: 先试 `<name>-imported`, 仍冲突则依次尝试
+/// `<name>-imported-2`、`<name>-imported-3`……直到找到本机尚不存在同类型同名资源的一个
+fn next_available_name(conn: &Connection, res_type: ResourceType, name: &str) -> Result<String> {
+	let first = format!("{name}-imported");
+	if find_existing_resource(conn, res_type, &first)?.is_none() {
+		return Ok(first);
+	}
+	let mut suffix = 2i64;
+	loop {
+		let candidate = format!("{name}-imported-{suffix}");
+		if find_existing_resource(conn, res_type, &candidate)?.is_none() {
+			return Ok(candidate);
+		}
+		suffix += 1;
+	}
+}
+
+/// 落地一个 Skill 资源的内容到 data_dir/skills/<landed_name>/: 若该目录已存在残留内容(不论是否
+/// 曾注册为资源)先整体清空再重建, 不做增量合并(与 services::market::write_skill_files/
+/// services::library::import_skill 同一"整树覆盖"既有惯例), 再逐文件写入(files 的相对路径
+/// 已在 group_import_items 阶段剥离 "skills/<name>/" 前缀); 返回落地后的完整目录路径
+fn land_skill_content(
+	data_dir: &Path,
+	landed_name: &str,
+	files: &[(String, Vec<u8>)],
+) -> Result<PathBuf> {
+	let target = data_dir.join("skills").join(landed_name);
+	if target.exists() {
+		fs::remove_dir_all(&target)
+			.with_context(|| format!("清理旧 Skill 目录失败: {}", target.display()))?;
+	}
+	fs::create_dir_all(&target).with_context(|| format!("创建目录失败: {}", target.display()))?;
+	for (rel_path, bytes) in files {
+		let file_path = target.join(rel_path);
+		if let Some(parent) = file_path.parent() {
+			fs::create_dir_all(parent)
+				.with_context(|| format!("创建目录失败: {}", parent.display()))?;
+		}
+		fs::write(&file_path, bytes)
+			.with_context(|| format!("写入文件失败: {}", file_path.display()))?;
+	}
+	Ok(target)
+}
+
+/// 落地一个 Mcp 资源的内容到 data_dir/mcp/<landed_name>.json: 单文件整体覆盖写入(fs::write
+/// 本就整体替换旧内容, 不需要 Skill 分支那样先删再建的额外步骤), 返回落地后的完整文件路径
+fn land_mcp_content(data_dir: &Path, landed_name: &str, bytes: &[u8]) -> Result<PathBuf> {
+	let mcp_dir = data_dir.join("mcp");
+	fs::create_dir_all(&mcp_dir).with_context(|| format!("创建目录失败: {}", mcp_dir.display()))?;
+	let target = mcp_dir.join(format!("{landed_name}.json"));
+	fs::write(&target, bytes).with_context(|| format!("写入文件失败: {}", target.display()))?;
+	Ok(target)
+}
+
+/// 解析某待落地资源应采用的版本号: 优先取 manifest.versions 里按其"导出时原始名称"记录的精确
+/// 锁定值(仅 ExportOptions.include_version_lock=true 时非空, 键为 "skills/<name>"/
+/// "mcp/<name>.json", 与 export_bundle 写入该 map 时的键格式一致, 见其文档); 取不到时退回按
+/// 内容自行解析 —— Skill 从其 SKILL.md 内容解析 frontmatter version(与本地导入
+/// services::library::import_skill 同一逻辑, 见 parse_frontmatter_version), Mcp 恒为空串
+/// (定义文件本身不携带版本概念, 与本地导入 services::library::import_mcp 同一惯例)。
+/// 注意用的是资源"导出时的原始名称"(item.name, KeepBoth 改名前), 因为 manifest.versions 的键
+/// 在导出那一刻就已固定, 与导入这一刻是否需要改名无关
+fn resolve_version(manifest: &Manifest, item: &ImportItem) -> String {
+	let root_key = match item.res_type {
+		ResourceType::Skill => format!("skills/{}", item.name),
+		ResourceType::Mcp => format!("mcp/{}.json", item.name),
+	};
+	if let Some(locked) = manifest.versions.get(&root_key) {
+		return locked.clone();
+	}
+	match item.res_type {
+		ResourceType::Skill => item
+			.files
+			.iter()
+			.find(|(rel, _)| rel == "SKILL.md")
+			.map(|(_, bytes)| parse_frontmatter_version(&String::from_utf8_lossy(bytes)))
+			.unwrap_or_default(),
+		ResourceType::Mcp => String::new(),
+	}
+}
+
+/// 落地一个资源项(写 data_dir 内容 + upsert/insert resource 记录), 供 import_bundle 主循环
+/// 的三种冲突策略分支共用: `landed_name` 为实际落地使用的名称(KeepBoth 命中冲突时是改名后的
+/// 新名称, 其余场景恒等于 item.name); `existing` 非 None 时表示 Overwrite 策略命中了同名既有
+/// 资源 —— 此时保留其 id 与 display_name 只更新 version/local_path(update_meta, 不删除重建,
+/// 使已有的 resource_agent 关联/同步状态不因 id 变化而失联); 否则视为全新资源插入
+/// (display_name 取 landed_name, 与 services::library::import_local"导入时没有额外展示名
+/// 输入"的既有惯例一致)。source_type 统一落 LocalImport(内容来自本地导入包, 而非网络市场安装),
+/// 返回落地后的资源 id
+fn land_item(
+	conn: &Connection,
+	data_dir: &Path,
+	manifest: &Manifest,
+	item: &ImportItem,
+	landed_name: &str,
+	existing: Option<&Resource>,
+) -> Result<i64> {
+	let version = resolve_version(manifest, item);
+	let local_path = match item.res_type {
+		ResourceType::Skill => land_skill_content(data_dir, landed_name, &item.files)?,
+		ResourceType::Mcp => {
+			let bytes = &item
+				.files
+				.first()
+				.ok_or_else(|| anyhow!("Mcp 资源 {} 缺少内容", item.name))?
+				.1;
+			land_mcp_content(data_dir, landed_name, bytes)?
+		}
+	};
+	let local_path = local_path.to_string_lossy().into_owned();
+
+	match existing {
+		Some(existing) => {
+			repo_resource::update_meta(
+				conn,
+				existing.id,
+				&repo_resource::ResourceMetaUpdate {
+					display_name: existing.display_name.clone(),
+					version,
+					local_path,
+				},
+			)?;
+			Ok(existing.id)
+		}
+		None => Ok(repo_resource::insert(
+			conn,
+			&repo_resource::NewResource {
+				res_type: item.res_type,
+				name: landed_name.to_string(),
+				display_name: landed_name.to_string(),
+				version,
+				source_type: SourceType::LocalImport,
+				local_path,
+				enabled: true,
+			},
+		)?),
+	}
+}
+
+/// 把 settings.json(内容为 cfg_key -> cfg_value 的扁平 JSON 对象, 与 collect_settings_file
+/// 写出的形状一致)逐条 upsert 回 setting 表; 内容本身解析失败(结构不是预期的扁平对象)视为
+/// 硬错误整体返回 Err —— 已通过 sha256 校验和验证的内容仍解析失败, 说明这是一个内容格式本身
+/// 有问题的包, 不应放任, 参照 export_bundle 对"资源路径不在 data_dir 内"这类结构性问题的处理
+/// 态度(整体失败, 不悄悄放过)
+fn restore_settings(conn: &Connection, bytes: &[u8]) -> Result<()> {
+	let map: BTreeMap<String, String> =
+		serde_json::from_slice(bytes).context("解析 settings.json 失败")?;
+	for (key, value) in map {
+		repo_setting::upsert(conn, &key, &value)?;
+	}
+	Ok(())
+}
+
+/// 按名称在 agent 表里查找 Agent id: 供 restore_agent_links 按 agents.json 记录的展示名匹配
+/// 本机 Agent(数据库自增 id 不跨机器可移植, 只能按名称尽力匹配, 见 export_bundle 内
+/// AgentLinkExport 的文档), 找不到返回 None(不视为错误)
+fn find_agent_by_name(conn: &Connection, name: &str) -> Result<Option<i64>> {
+	Ok(repo_agent::list(conn)?
+		.into_iter()
+		.find(|agent| agent.name == name)
+		.map(|agent| agent.id))
+}
+
+/// 恢复 agents.json 记录的资源-Agent 关联(resource_agent.desired=true): 记录里的资源按
+/// (res_type, resource_name) 通过 `landed` 映射(本次导入实际落地的资源 id, 键为落地前的原始
+/// 名称, 见 import_bundle 主循环)查到目标 resource_id —— 查不到说明该资源本次并未真正落地
+/// (如 Skip 策略下被跳过的资源, "不改库"包含不为其恢复关联, 见 domain::portability::
+/// ConflictStrategy 文档), 静默跳过且不计入"部分成功"判定(这是策略选择的预期结果, 不是一次
+/// 尽力而未达成的失败); Agent 按 agent_name 在本机 agent 表按展示名查找, 找不到才计入"部分
+/// 成功"(导出方与导入方是两台不同机器, 本机确实可能从未探测/登记过这个名字的 Agent, 属于
+/// "尽力恢复, 找不到就跳过"的既有约定)。返回值为"是否全部记录的 Agent 都成功匹配", 供调用方
+/// 据此决定 import_export_log 的 status
+fn restore_agent_links(
+	conn: &Connection,
+	bytes: &[u8],
+	landed: &BTreeMap<(ResourceType, String), i64>,
+) -> Result<bool> {
+	let links: Vec<AgentLinkExport> =
+		serde_json::from_slice(bytes).context("解析 agents.json 失败")?;
+
+	let mut all_agents_matched = true;
+	for link in links {
+		let res_type = ResourceType::from_i64(link.res_type);
+		let Some(&resource_id) = landed.get(&(res_type, link.resource_name.clone())) else {
+			continue;
+		};
+		match find_agent_by_name(conn, &link.agent_name)? {
+			Some(agent_id) => {
+				repo_assoc::set(conn, resource_id, agent_id, true)?;
+			}
+			None => all_agents_matched = false,
+		}
+	}
+	Ok(all_agents_matched)
+}
+
+/// 按 strategy 把已解析且通过校验的导入包(parsed)落地到 data_dir 与数据库, 返回落地统计
+/// (ImportOutcome, 见其文档)。落地前先重新校验一遍(validate_bundle, 与 parse_bundle 内部的
+/// 校验重复, 但 ParsedBundle 的字段均为 pub, 调用方理论上可绕开 parse_bundle 直接手工构造,
+/// 这里多一道防线, 呼应 brief"先 validate_bundle 再落地"的顺序要求)。三种 ConflictStrategy
+/// 的处理规则见 domain::portability::ConflictStrategy 文档与本函数内各分支注释; 落地后可选
+/// 恢复 settings.json(整表 upsert)/agents.json(尽力恢复关联, 见 restore_agent_links), 最终写
+/// 一条 direction=1(导入)的 import_export_log 记录。全程不使用显式事务, 见本节开头的模块级
+/// 说明
+pub fn import_bundle(
+	conn: &Connection,
+	data_dir: &Path,
+	parsed: ParsedBundle,
+	strategy: ConflictStrategy,
+) -> Result<ImportOutcome> {
+	validate_bundle(&parsed.manifest, &parsed.entries)?;
+
+	let ParsedBundle {
+		manifest,
+		mut entries,
+		source_file_name,
+		source_format,
+	} = parsed;
+	let settings_bytes = entries.remove("settings.json");
+	let agents_bytes = entries.remove("agents.json");
+	let items = group_import_items(entries);
+
+	let mut imported = 0i64;
+	let mut skipped = 0i64;
+	let mut renamed = 0i64;
+	// 原始名称(改名前) -> 落地后的实际资源 id, 供 restore_agent_links 定位关联目标;
+	// Skip 策略下被跳过的资源不登记进这里(见 restore_agent_links 文档"不改库"的解读)
+	let mut landed: BTreeMap<(ResourceType, String), i64> = BTreeMap::new();
+
+	for item in &items {
+		let original_key = (item.res_type, item.name.clone());
+		match strategy {
+			// Overwrite: 命中同名既有资源则原地更新(保留 id), 否则等同全新插入
+			ConflictStrategy::Overwrite => {
+				let existing = find_existing_resource(conn, item.res_type, &item.name)?;
+				let resource_id = land_item(
+					conn,
+					data_dir,
+					&manifest,
+					item,
+					&item.name,
+					existing.as_ref(),
+				)?;
+				landed.insert(original_key, resource_id);
+				imported += 1;
+			}
+			// Skip: 命中同名既有资源则整体不动(不写内容/不改库), 否则等同全新插入
+			ConflictStrategy::Skip => {
+				if find_existing_resource(conn, item.res_type, &item.name)?.is_some() {
+					skipped += 1;
+					continue;
+				}
+				let resource_id = land_item(conn, data_dir, &manifest, item, &item.name, None)?;
+				landed.insert(original_key, resource_id);
+				imported += 1;
+			}
+			// KeepBoth: 命中同名既有资源则改名后另起一行落地(原资源原样保留不动),
+			// 否则等同全新插入
+			ConflictStrategy::KeepBoth => {
+				if find_existing_resource(conn, item.res_type, &item.name)?.is_some() {
+					let unique_name = next_available_name(conn, item.res_type, &item.name)?;
+					let resource_id =
+						land_item(conn, data_dir, &manifest, item, &unique_name, None)?;
+					landed.insert(original_key, resource_id);
+					renamed += 1;
+				} else {
+					let resource_id = land_item(conn, data_dir, &manifest, item, &item.name, None)?;
+					landed.insert(original_key, resource_id);
+					imported += 1;
+				}
+			}
+		}
+	}
+
+	if let Some(bytes) = settings_bytes {
+		restore_settings(conn, &bytes)?;
+	}
+
+	let mut partial = false;
+	if let Some(bytes) = agents_bytes {
+		if !restore_agent_links(conn, &bytes, &landed)? {
+			partial = true;
+		}
+	}
+
+	let status = if partial { 2 } else { 1 };
+	let summary = format!("{imported} 项导入, {skipped} 项跳过, {renamed} 项重命名");
+	repo_impexp::add(
+		conn,
+		1,
+		&source_file_name,
+		i64::from(source_format),
+		&summary,
+		status,
+	)?;
+
+	Ok(ImportOutcome {
+		imported,
+		skipped,
+		renamed,
+		status,
+	})
+}
+
+/// 对本机全部"在线"(agent.status=true)的 Agent 逐一触发一次完整同步应用(见 services::sync::
+/// apply_for_agent), 供 commands::portability::import_bundle 命令层 auto_sync=true 分支复用,
+/// 也让这一步能脱离真实 tauri::State 直接单测(本仓库 commands 层普遍约定, 见
+/// commands::market 文件头"均只接受 &Connection/&Path"的既有分层思路)。单个 Agent 应用失败
+/// (理论只在 agent_id 已失效等结构性错误时发生, 常规的"某几项同步失败"已被 apply_for_agent
+/// 内部吸收进其 SyncSummary.failed, 不会以 Err 形式冒出来)不应拖累其它 Agent, 静默跳过继续
+/// 处理下一个; 返回值为各在线 Agent(成功应用的那些)各自的 SyncSummary, 供调用方按需查看/丢弃
+pub fn sync_online_agents(conn: &Connection, home: &Path) -> Result<Vec<sync::SyncSummary>> {
+	let mut summaries = Vec::new();
+	for agent in repo_agent::list(conn)? {
+		if !agent.status {
+			continue;
+		}
+		if let Ok(summary) = sync::apply_for_agent(conn, home, agent.id) {
+			summaries.push(summary);
+		}
+	}
+	Ok(summaries)
+}
+
 #[cfg(test)]
 mod tests {
 	use std::io::Read as _;
@@ -766,7 +1202,7 @@ mod tests {
 	use crate::domain::agent::{AgentKind, AgentScope, DetectedAgent};
 	use crate::domain::portability::Scope;
 	use crate::domain::resource::SourceType;
-	use crate::infra::{repo_agent, repo_setting};
+	use crate::infra::{repo_agent, repo_setting, repo_sync};
 
 	/// 建一个已迁移好 10 张表结构的内存库, 供本模块测试复用(migrate 为 pub(crate), 见 infra::store)
 	fn setup_conn() -> Connection {
@@ -1405,6 +1841,8 @@ mod tests {
 				..empty_manifest(1)
 			},
 			entries: BTreeMap::new(),
+			source_file_name: String::new(),
+			source_format: BundleFormat::Zip,
 		};
 		let result = preview(&parsed);
 		assert_eq!(result.skill, 2);
@@ -1769,5 +2207,645 @@ mod tests {
 
 		let result = parse_bundle(&path);
 		assert!(result.is_err());
+	}
+
+	// ========================================================================
+	// 导入落地(M3 Task 4): build_parsed_bundle 手工构造 ParsedBundle(不必每次都真的走一遍
+	// zip 打包/解析), 覆盖三种 ConflictStrategy 的冲突/无冲突分支、agents.json/settings.json
+	// 恢复、以及 auto_sync 依赖的 sync_online_agents; 最后用一次真正经 export_bundle ->
+	// parse_bundle 的完整往返测试收尾
+	// ========================================================================
+
+	/// 手工拼一份 ParsedBundle, 供只关心 import_bundle 落地逻辑本身(而非真实归档格式)的测试
+	/// 快速构造输入: entries 直接给定, checksums 按 entries 内容精确计算(保证 validate_bundle
+	/// 能通过); manifest.counts 本身不影响 import_bundle 的任何行为(只是 ImportPreview 展示用
+	/// 的统计, 见其文档), 固定填 0 占位即可; source_file_name/source_format 同样给固定占位值
+	fn build_parsed_bundle(files: &[(&str, &[u8])]) -> ParsedBundle {
+		let entries: BTreeMap<String, Vec<u8>> = files
+			.iter()
+			.map(|(path, bytes)| (path.to_string(), bytes.to_vec()))
+			.collect();
+		let checksums = entries
+			.iter()
+			.map(|(path, bytes)| (path.clone(), sha256_hex(bytes)))
+			.collect();
+		ParsedBundle {
+			manifest: Manifest {
+				schema_version: 1,
+				exported_at: "2026-07-10T00:00:00Z".to_string(),
+				counts: Counts {
+					skill: 0,
+					mcp: 0,
+					config: 0,
+					agent: 0,
+				},
+				versions: BTreeMap::new(),
+				checksums,
+			},
+			entries,
+			source_file_name: "bundle.zip".to_string(),
+			source_format: BundleFormat::Zip,
+		}
+	}
+
+	/// 插入一条最小资源, 供冲突场景测试构造"库中已存在同名资源"的前置状态; 返回其 id 与落地
+	/// 目录/文件路径(与 group_import_items 反推出的路径形状一致, 供测试直接写入初始内容)
+	fn seed_existing_skill(conn: &Connection, data_dir: &Path, name: &str, version: &str) -> i64 {
+		let target = data_dir.join("skills").join(name);
+		repo_resource::insert(
+			conn,
+			&repo_resource::NewResource {
+				res_type: ResourceType::Skill,
+				name: name.to_string(),
+				display_name: name.to_string(),
+				version: version.to_string(),
+				source_type: SourceType::LocalImport,
+				local_path: target.to_string_lossy().into_owned(),
+				enabled: true,
+			},
+		)
+		.unwrap()
+	}
+
+	// import_bundle: 空库导入(无同名冲突)应把全部资源计入 imported, 内容应精确落地到
+	// data_dir/skills/<name>/ 与 data_dir/mcp/<name>.json, 并写入一条成功的导入历史记录
+	#[test]
+	fn import_bundle_into_empty_library_lands_all_as_imported() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let parsed = build_parsed_bundle(&[
+			(
+				"skills/demo-skill/SKILL.md",
+				"---\nversion: 1.2.0\n---\n正文\n".as_bytes(),
+			),
+			("skills/demo-skill/scripts/run.sh", b"#!/bin/sh\necho hi\n"),
+			(
+				"mcp/demo-mcp.json",
+				br#"{"command":"node","args":["index.js"]}"#,
+			),
+		]);
+
+		let outcome =
+			import_bundle(&conn, data_dir.path(), parsed, ConflictStrategy::Overwrite).unwrap();
+
+		assert_eq!(
+			outcome,
+			ImportOutcome {
+				imported: 2,
+				skipped: 0,
+				renamed: 0,
+				status: 1,
+			}
+		);
+
+		let resources = repo_resource::list(&conn, &ListFilter::default()).unwrap();
+		assert_eq!(resources.len(), 2);
+		let skill = resources
+			.iter()
+			.find(|r| r.name == "demo-skill")
+			.expect("应含 demo-skill");
+		assert_eq!(skill.res_type, ResourceType::Skill);
+		assert_eq!(skill.version, "1.2.0", "应从 SKILL.md frontmatter 解析");
+		assert_eq!(skill.display_name, "demo-skill");
+		assert_eq!(skill.source_type, SourceType::LocalImport);
+		let mcp = resources
+			.iter()
+			.find(|r| r.name == "demo-mcp")
+			.expect("应含 demo-mcp");
+		assert_eq!(mcp.res_type, ResourceType::Mcp);
+		assert_eq!(mcp.version, "");
+
+		assert_eq!(
+			fs::read_to_string(data_dir.path().join("skills/demo-skill/SKILL.md")).unwrap(),
+			"---\nversion: 1.2.0\n---\n正文\n"
+		);
+		assert_eq!(
+			fs::read_to_string(data_dir.path().join("skills/demo-skill/scripts/run.sh")).unwrap(),
+			"#!/bin/sh\necho hi\n"
+		);
+		assert_eq!(
+			fs::read_to_string(data_dir.path().join("mcp/demo-mcp.json")).unwrap(),
+			r#"{"command":"node","args":["index.js"]}"#
+		);
+
+		let history = repo_impexp::recent(&conn, 10).unwrap();
+		assert_eq!(history.len(), 1);
+		assert_eq!(history[0].direction, 1, "1-导入");
+		assert_eq!(history[0].status, 1, "1-成功");
+	}
+
+	// import_bundle(Overwrite): 命中同名既有资源应原地覆盖 —— 保留原资源 id, 内容与
+	// version/local_path 更新为导入包内容, 库里仍只有一行; display_name 保留原值不变
+	#[test]
+	fn import_bundle_overwrite_replaces_existing_resource_content_in_place() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+
+		let old_dir = data_dir.path().join("skills/demo-skill");
+		fs::create_dir_all(&old_dir).unwrap();
+		fs::write(
+			old_dir.join("SKILL.md"),
+			"---\nversion: 1.0.0\n---\n旧内容\n",
+		)
+		.unwrap();
+		fs::write(old_dir.join("STALE.md"), "旧版本独有文件").unwrap();
+		let existing_id = repo_resource::insert(
+			&conn,
+			&repo_resource::NewResource {
+				res_type: ResourceType::Skill,
+				name: "demo-skill".to_string(),
+				display_name: "我的 Demo Skill".to_string(),
+				version: "1.0.0".to_string(),
+				source_type: SourceType::LocalImport,
+				local_path: old_dir.to_string_lossy().into_owned(),
+				enabled: true,
+			},
+		)
+		.unwrap();
+
+		let parsed = build_parsed_bundle(&[(
+			"skills/demo-skill/SKILL.md",
+			"---\nversion: 2.0.0\n---\n新内容\n".as_bytes(),
+		)]);
+
+		let outcome =
+			import_bundle(&conn, data_dir.path(), parsed, ConflictStrategy::Overwrite).unwrap();
+
+		assert_eq!(outcome.imported, 1);
+		assert_eq!(outcome.skipped, 0);
+		assert_eq!(outcome.renamed, 0);
+
+		let resources = repo_resource::list(&conn, &ListFilter::default()).unwrap();
+		assert_eq!(resources.len(), 1, "覆盖不应新增行");
+		let got = &resources[0];
+		assert_eq!(got.id, existing_id, "应保留原 id");
+		assert_eq!(
+			got.display_name, "我的 Demo Skill",
+			"display_name 不应被重置"
+		);
+		assert_eq!(got.version, "2.0.0");
+
+		assert!(!old_dir.join("STALE.md").exists(), "旧版本独有文件应被清理");
+		assert_eq!(
+			fs::read_to_string(old_dir.join("SKILL.md")).unwrap(),
+			"---\nversion: 2.0.0\n---\n新内容\n"
+		);
+	}
+
+	// import_bundle(Skip): 命中同名既有资源应整体不动 —— 不写内容、不改库, 计入 skipped
+	#[test]
+	fn import_bundle_skip_leaves_existing_resource_and_content_untouched() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+
+		let old_dir = data_dir.path().join("skills/demo-skill");
+		fs::create_dir_all(&old_dir).unwrap();
+		fs::write(
+			old_dir.join("SKILL.md"),
+			"---\nversion: 1.0.0\n---\n旧内容\n",
+		)
+		.unwrap();
+		let existing_id = seed_existing_skill(&conn, data_dir.path(), "demo-skill", "1.0.0");
+
+		let parsed = build_parsed_bundle(&[(
+			"skills/demo-skill/SKILL.md",
+			"---\nversion: 2.0.0\n---\n新内容\n".as_bytes(),
+		)]);
+
+		let outcome =
+			import_bundle(&conn, data_dir.path(), parsed, ConflictStrategy::Skip).unwrap();
+
+		assert_eq!(
+			outcome,
+			ImportOutcome {
+				imported: 0,
+				skipped: 1,
+				renamed: 0,
+				status: 1,
+			}
+		);
+
+		let resources = repo_resource::list(&conn, &ListFilter::default()).unwrap();
+		assert_eq!(resources.len(), 1);
+		assert_eq!(resources[0].id, existing_id);
+		assert_eq!(resources[0].version, "1.0.0", "不应被改动");
+
+		assert_eq!(
+			fs::read_to_string(old_dir.join("SKILL.md")).unwrap(),
+			"---\nversion: 1.0.0\n---\n旧内容\n",
+			"内容不应被改动"
+		);
+	}
+
+	// import_bundle(KeepBoth): 命中同名既有资源应改名为 `<name>-imported` 后另起一行落地,
+	// 原资源原样保留不动, 计入 renamed
+	#[test]
+	fn import_bundle_keep_both_renames_and_lands_alongside_existing() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+
+		let old_dir = data_dir.path().join("skills/demo-skill");
+		fs::create_dir_all(&old_dir).unwrap();
+		fs::write(
+			old_dir.join("SKILL.md"),
+			"---\nversion: 1.0.0\n---\n旧内容\n",
+		)
+		.unwrap();
+		let existing_id = seed_existing_skill(&conn, data_dir.path(), "demo-skill", "1.0.0");
+
+		let parsed = build_parsed_bundle(&[(
+			"skills/demo-skill/SKILL.md",
+			"---\nversion: 2.0.0\n---\n新内容\n".as_bytes(),
+		)]);
+
+		let outcome =
+			import_bundle(&conn, data_dir.path(), parsed, ConflictStrategy::KeepBoth).unwrap();
+
+		assert_eq!(
+			outcome,
+			ImportOutcome {
+				imported: 0,
+				skipped: 0,
+				renamed: 1,
+				status: 1,
+			}
+		);
+
+		let resources = repo_resource::list(&conn, &ListFilter::default()).unwrap();
+		assert_eq!(resources.len(), 2);
+		let original = resources.iter().find(|r| r.id == existing_id).unwrap();
+		assert_eq!(original.name, "demo-skill");
+		assert_eq!(original.version, "1.0.0", "原资源应原样保留");
+		let renamed_res = resources
+			.iter()
+			.find(|r| r.name == "demo-skill-imported")
+			.expect("应新增改名后的资源");
+		assert_eq!(renamed_res.version, "2.0.0");
+		assert_eq!(renamed_res.display_name, "demo-skill-imported");
+
+		assert_eq!(
+			fs::read_to_string(old_dir.join("SKILL.md")).unwrap(),
+			"---\nversion: 1.0.0\n---\n旧内容\n",
+			"原内容不应被改动"
+		);
+		assert_eq!(
+			fs::read_to_string(data_dir.path().join("skills/demo-skill-imported/SKILL.md"))
+				.unwrap(),
+			"---\nversion: 2.0.0\n---\n新内容\n"
+		);
+	}
+
+	// import_bundle(KeepBoth): `<name>-imported` 也已被占用时应继续尝试 `<name>-imported-2`
+	#[test]
+	fn import_bundle_keep_both_numbers_second_conflict() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+
+		seed_existing_skill(&conn, data_dir.path(), "demo-skill", "1.0.0");
+		seed_existing_skill(&conn, data_dir.path(), "demo-skill-imported", "1.0.0");
+
+		let parsed = build_parsed_bundle(&[(
+			"skills/demo-skill/SKILL.md",
+			"---\nversion: 2.0.0\n---\n新内容\n".as_bytes(),
+		)]);
+
+		let outcome =
+			import_bundle(&conn, data_dir.path(), parsed, ConflictStrategy::KeepBoth).unwrap();
+
+		assert_eq!(outcome.renamed, 1);
+		let resources = repo_resource::list(&conn, &ListFilter::default()).unwrap();
+		assert_eq!(resources.len(), 3);
+		assert!(resources.iter().any(|r| r.name == "demo-skill-imported-2"));
+	}
+
+	// import_bundle: agents.json 记录的关联在本机能找到同名 Agent 时应恢复 resource_agent
+	// 期望态, status 应为 1(全部匹配成功)
+	#[test]
+	fn import_bundle_restores_agent_link_when_agent_found_by_name() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let agent_id = seed_agent(&conn, "Claude Code");
+
+		let agents_json = serde_json::json!([
+			{ "resourceName": "demo-skill", "resType": 1, "agentName": "Claude Code" }
+		])
+		.to_string();
+		let parsed = build_parsed_bundle(&[
+			(
+				"skills/demo-skill/SKILL.md",
+				"---\nversion: 1.0.0\n---\n正文\n".as_bytes(),
+			),
+			("agents.json", agents_json.as_bytes()),
+		]);
+
+		let outcome =
+			import_bundle(&conn, data_dir.path(), parsed, ConflictStrategy::Overwrite).unwrap();
+
+		assert_eq!(outcome.status, 1, "应全部匹配成功");
+		let resource_id = repo_resource::list(&conn, &ListFilter::default())
+			.unwrap()
+			.into_iter()
+			.find(|r| r.name == "demo-skill")
+			.unwrap()
+			.id;
+		assert_eq!(
+			repo_assoc::agents_for_resource(&conn, resource_id).unwrap(),
+			vec![agent_id]
+		);
+	}
+
+	// import_bundle: agents.json 记录的关联在本机找不到同名 Agent 时应跳过该关联(不报错),
+	// 但应整体标记为 status=2(部分成功); 资源本身仍应正常导入
+	#[test]
+	fn import_bundle_marks_partial_status_when_agent_not_found_by_name() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+
+		let agents_json = serde_json::json!([
+			{ "resourceName": "demo-skill", "resType": 1, "agentName": "不存在的 Agent" }
+		])
+		.to_string();
+		let parsed = build_parsed_bundle(&[
+			(
+				"skills/demo-skill/SKILL.md",
+				"---\nversion: 1.0.0\n---\n正文\n".as_bytes(),
+			),
+			("agents.json", agents_json.as_bytes()),
+		]);
+
+		let outcome =
+			import_bundle(&conn, data_dir.path(), parsed, ConflictStrategy::Overwrite).unwrap();
+
+		assert_eq!(outcome.imported, 1, "资源本身应正常导入");
+		assert_eq!(outcome.status, 2, "关联未能全部恢复应标记部分成功");
+
+		let resource_id = repo_resource::list(&conn, &ListFilter::default())
+			.unwrap()
+			.into_iter()
+			.find(|r| r.name == "demo-skill")
+			.unwrap()
+			.id;
+		assert!(repo_assoc::agents_for_resource(&conn, resource_id)
+			.unwrap()
+			.is_empty());
+
+		let history = repo_impexp::recent(&conn, 10).unwrap();
+		assert_eq!(history[0].status, 2, "2-部分成功");
+	}
+
+	// import_bundle: Skip 策略跳过的资源不应恢复其 agents.json 关联(呼应 Skip"不改库"的
+	// 既有约定), 即便本机确实存在同名 Agent; 但这属于策略选择的预期结果, 不应计入部分成功
+	#[test]
+	fn import_bundle_skip_does_not_restore_agent_link_for_skipped_resource() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let _agent_id = seed_agent(&conn, "Claude Code");
+		seed_existing_skill(&conn, data_dir.path(), "demo-skill", "1.0.0");
+
+		let agents_json = serde_json::json!([
+			{ "resourceName": "demo-skill", "resType": 1, "agentName": "Claude Code" }
+		])
+		.to_string();
+		let parsed = build_parsed_bundle(&[
+			(
+				"skills/demo-skill/SKILL.md",
+				"---\nversion: 2.0.0\n---\n新内容\n".as_bytes(),
+			),
+			("agents.json", agents_json.as_bytes()),
+		]);
+
+		let outcome =
+			import_bundle(&conn, data_dir.path(), parsed, ConflictStrategy::Skip).unwrap();
+
+		assert_eq!(outcome.skipped, 1);
+		assert_eq!(outcome.status, 1, "被跳过属预期结果, 不应视为部分成功");
+		let resource_id = repo_resource::list(&conn, &ListFilter::default())
+			.unwrap()
+			.into_iter()
+			.find(|r| r.name == "demo-skill")
+			.unwrap()
+			.id;
+		assert!(
+			repo_assoc::agents_for_resource(&conn, resource_id)
+				.unwrap()
+				.is_empty(),
+			"跳过的资源不应被恢复关联"
+		);
+	}
+
+	// import_bundle: settings.json(cfg_key -> cfg_value 扁平对象)应整表 upsert 回 setting 表
+	#[test]
+	fn import_bundle_restores_settings_from_settings_json() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+
+		let settings_json = serde_json::json!({
+			"net.proxy": "http://127.0.0.1:7890",
+			"sync.pref": "auto"
+		})
+		.to_string();
+		let parsed = build_parsed_bundle(&[
+			(
+				"skills/demo-skill/SKILL.md",
+				"---\nversion: 1.0.0\n---\n正文\n".as_bytes(),
+			),
+			("settings.json", settings_json.as_bytes()),
+		]);
+
+		import_bundle(&conn, data_dir.path(), parsed, ConflictStrategy::Overwrite).unwrap();
+
+		let settings = repo_setting::list_all(&conn).unwrap();
+		assert_eq!(settings.len(), 2);
+		assert!(settings
+			.iter()
+			.any(|s| s.cfg_key == "net.proxy" && s.cfg_value == "http://127.0.0.1:7890"));
+		assert!(settings
+			.iter()
+			.any(|s| s.cfg_key == "sync.pref" && s.cfg_value == "auto"));
+	}
+
+	// import_bundle: 往返测试 —— 用 export_bundle 从一份含 1 Skill+1 Mcp 的库导出真实 zip,
+	// 再用 parse_bundle 解析, 最后导入到一个全新(空)的库/数据目录, 内容与元数据应精确一致
+	#[test]
+	fn import_bundle_round_trips_export_output_into_fresh_library() {
+		let source_conn = setup_conn();
+		let (source_data_dir, _skill_id, _mcp_id) = seed_data_dir_and_resources(&source_conn);
+		let bundle_path = source_data_dir.path().join("out.zip");
+		export_bundle(
+			&source_conn,
+			source_data_dir.path(),
+			&full_options(BundleFormat::Zip),
+			&bundle_path,
+		)
+		.unwrap();
+
+		let parsed = parse_bundle(&bundle_path).unwrap();
+
+		let target_conn = setup_conn();
+		let target_data_dir = tempdir().unwrap();
+		let outcome = import_bundle(
+			&target_conn,
+			target_data_dir.path(),
+			parsed,
+			ConflictStrategy::Overwrite,
+		)
+		.unwrap();
+
+		assert_eq!(
+			outcome,
+			ImportOutcome {
+				imported: 2,
+				skipped: 0,
+				renamed: 0,
+				status: 1,
+			}
+		);
+
+		let resources = repo_resource::list(&target_conn, &ListFilter::default()).unwrap();
+		assert_eq!(resources.len(), 2);
+		let skill = resources.iter().find(|r| r.name == "demo-skill").unwrap();
+		assert_eq!(skill.version, "1.2.0");
+		let mcp = resources.iter().find(|r| r.name == "demo-mcp").unwrap();
+		assert_eq!(mcp.version, "");
+
+		assert_eq!(
+			fs::read_to_string(target_data_dir.path().join("skills/demo-skill/SKILL.md")).unwrap(),
+			fs::read_to_string(source_data_dir.path().join("skills/demo-skill/SKILL.md")).unwrap(),
+		);
+		assert_eq!(
+			fs::read_to_string(
+				target_data_dir
+					.path()
+					.join("skills/demo-skill/scripts/run.sh")
+			)
+			.unwrap(),
+			"#!/bin/sh\necho hi\n"
+		);
+		assert_eq!(
+			fs::read_to_string(target_data_dir.path().join("mcp/demo-mcp.json")).unwrap(),
+			fs::read_to_string(source_data_dir.path().join("mcp/demo-mcp.json")).unwrap(),
+		);
+	}
+
+	// sync_online_agents: 应只对 status=true(在线)的 Agent 触发同步, 离线 Agent 应被跳过
+	// (不产生 sync_run, 也不出现在返回的汇总列表里)
+	#[test]
+	fn sync_online_agents_skips_offline_agents() {
+		let conn = setup_conn();
+		let home = tempdir().unwrap();
+		fs::write(home.path().join(".claude.json"), r#"{"mcpServers":{}}"#).unwrap();
+
+		let online_id = repo_agent::upsert(
+			&conn,
+			&DetectedAgent {
+				kind: AgentKind::ClaudeCode,
+				name: "Online Agent".to_string(),
+				config_path: home
+					.path()
+					.join(".claude.json")
+					.to_string_lossy()
+					.into_owned(),
+				scope: AgentScope::Global,
+				online: true,
+			},
+		)
+		.unwrap();
+		repo_agent::upsert(
+			&conn,
+			&DetectedAgent {
+				kind: AgentKind::ClaudeCode,
+				name: "Offline Agent".to_string(),
+				config_path: home
+					.path()
+					.join("offline/.claude.json")
+					.to_string_lossy()
+					.into_owned(),
+				scope: AgentScope::Global,
+				online: false,
+			},
+		)
+		.unwrap();
+
+		let def_path = home.path().join("demo-mcp.json");
+		fs::write(&def_path, r#"{"command":"node","args":["index.js"]}"#).unwrap();
+		let resource_id = repo_resource::insert(
+			&conn,
+			&repo_resource::NewResource {
+				res_type: ResourceType::Mcp,
+				name: "demo-mcp".to_string(),
+				display_name: "demo-mcp".to_string(),
+				version: String::new(),
+				source_type: SourceType::LocalImport,
+				local_path: def_path.to_string_lossy().into_owned(),
+				enabled: true,
+			},
+		)
+		.unwrap();
+		repo_assoc::set(&conn, resource_id, online_id, true).unwrap();
+
+		let summaries = sync_online_agents(&conn, home.path()).unwrap();
+
+		assert_eq!(summaries.len(), 1, "只应处理在线的那个 Agent");
+		assert_eq!(summaries[0].success, 1);
+
+		let runs = repo_sync::recent_runs(&conn, 10).unwrap();
+		assert_eq!(runs.len(), 1, "离线 Agent 不应产生 sync_run");
+		assert_eq!(runs[0].agent_id, online_id);
+	}
+
+	// import_bundle + sync_online_agents 端到端: agents.json 恢复的关联应能被后续的
+	// sync_online_agents 真正应用到该 Agent 的配置文件里(证明 auto_sync=true 分支确实链得上
+	// 导入落地的关联结果, 而不只是各自独立测试通过)
+	#[test]
+	fn import_then_sync_online_agents_applies_restored_association() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let home = tempdir().unwrap();
+		fs::write(home.path().join(".claude.json"), r#"{"mcpServers":{}}"#).unwrap();
+
+		let agent_id = repo_agent::upsert(
+			&conn,
+			&DetectedAgent {
+				kind: AgentKind::ClaudeCode,
+				name: "Claude Code".to_string(),
+				config_path: home
+					.path()
+					.join(".claude.json")
+					.to_string_lossy()
+					.into_owned(),
+				scope: AgentScope::Global,
+				online: true,
+			},
+		)
+		.unwrap();
+
+		let agents_json = serde_json::json!([
+			{ "resourceName": "demo-mcp", "resType": 2, "agentName": "Claude Code" }
+		])
+		.to_string();
+		let parsed = build_parsed_bundle(&[
+			(
+				"mcp/demo-mcp.json",
+				br#"{"command":"node","args":["index.js"]}"#,
+			),
+			("agents.json", agents_json.as_bytes()),
+		]);
+
+		let outcome =
+			import_bundle(&conn, data_dir.path(), parsed, ConflictStrategy::Overwrite).unwrap();
+		assert_eq!(outcome.status, 1);
+
+		let summaries = sync_online_agents(&conn, home.path()).unwrap();
+		assert_eq!(summaries.len(), 1);
+		assert_eq!(summaries[0].success, 1);
+
+		let root: serde_json::Value =
+			serde_json::from_str(&fs::read_to_string(home.path().join(".claude.json")).unwrap())
+				.unwrap();
+		assert_eq!(root["mcpServers"]["demo-mcp"]["command"], "node");
+
+		let runs = repo_sync::recent_runs(&conn, 10).unwrap();
+		assert_eq!(runs.len(), 1);
+		assert_eq!(runs[0].agent_id, agent_id);
 	}
 }
