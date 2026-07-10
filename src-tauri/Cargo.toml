@@ -32,8 +32,13 @@ keyring = "4"
 # async_trait: 让 SourceProvider(infra::source)的 async fn 方法保持 dyn 对象安全,
 # 原生 async fn in trait 不支持 dyn 分派(见 infra/source/mod.rs 文件头注释)
 async-trait = "0.1"
-# base64: 解码 GitHub contents API 返回的 base64 文件内容(infra::source::github_skills)
+# base64: 解码 GitHub contents API 返回的 base64 文件内容(infra::source::github_skills);
+# 也用于 PKCE code_verifier/code_challenge 的 base64url 编码(services::auth)
 base64 = "0.22"
+# sha2: PKCE(RFC 7636)S256 方法计算 code_challenge(services::auth::build_pkce)
+sha2 = "0.10"
+# rand: PKCE code_verifier 所需的密码学安全随机字节(services::auth::build_pkce)
+rand = "0.10"
 # futures: join_all 并发聚合市场三源的 search 调用(services::market::refresh); 已由 reqwest/
 # tauri 的传递依赖间接锁定 0.3.32, 此处提升为直接依赖以便在自身代码里 use
 futures = "0.3"

@@ -48,6 +48,9 @@ pub fn run() {
 		})
 		.invoke_handler(tauri::generate_handler![
 			commands::health::app_health,
+			commands::auth::auth_accounts,
+			commands::auth::auth_enter_token,
+			commands::auth::auth_logout,
 			commands::library::library_list,
 			commands::library::library_get,
 			commands::library::library_counts,

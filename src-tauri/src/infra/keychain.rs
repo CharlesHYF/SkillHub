@@ -37,13 +37,13 @@ pub fn delete_token(account: &str) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
 	use std::sync::{Mutex, MutexGuard};
 	use std::time::{SystemTime, UNIX_EPOCH};
 
 	use super::*;
 
-	/// 串行化本模块全部测试对真实系统钥匙串的访问。
+	/// 串行化整个 crate(不止本模块)对真实系统钥匙串的访问。
 	/// 原因一(一次性初始化竞态): keyring v4 的 v1 兼容层内部用一个裸 AtomicBool 判断"默认存储
 	/// 是否已选定", 只保证 set_credential_store 不被重复调用, 却没有让"没抢到标志位的线程"
 	/// 阻塞等待那次调用真正完成(见 keyring::v1::Entry::new 源码), 首次并发调用 Entry::new 会
@@ -51,20 +51,24 @@ mod tests {
 	/// 原因二(后端本身的并发问题): 即便绕开上面这一次性初始化竞态, 多线程并发对 Keychain
 	/// 增删查询仍偶发 macOS 底层报错(如 "An invalid record was encountered.")。
 	/// 两者均是 apple-native-keyring-store/keyring-core 这一侧的行为, 我们不修改也不依赖其内部
-	/// 实现, 只在测试代码这一侧用互斥锁把 5 个测试对钥匙串的访问改成串行, 彻底规避。锁只用于
+	/// 实现, 只在测试代码这一侧用互斥锁把测试对钥匙串的访问改成串行, 彻底规避。锁只用于
 	/// 互斥, 不承载任何需要保持一致性的数据, 中毒(某测试在持锁期间 panic)时直接取内层值继续
-	/// 用, 避免一个测试失败连锁"毒死"后面所有测试
-	static TEST_LOCK: Mutex<()> = Mutex::new(());
+	/// 用, 避免一个测试失败连锁"毒死"后面所有测试。
+	/// 声明为 pub(crate)(而非仅本模块私有): services::auth 的测试同样会经 store/logout/
+	/// token_for 间接触达真实系统钥匙串, cargo test 默认多线程并发跑各模块测试, 若各自持有
+	/// 独立的锁实例就起不到互斥作用, 必须共用同一把锁, 见该模块测试对本符号的引用
+	pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-	fn lock_keychain_tests() -> MutexGuard<'static, ()> {
+	pub(crate) fn lock_keychain_tests() -> MutexGuard<'static, ()> {
 		TEST_LOCK
 			.lock()
 			.unwrap_or_else(|poisoned| poisoned.into_inner())
 	}
 
 	/// 生成一个随机 account 名(进程 id + 纳秒时间戳拼接), 避免测试写入的钥匙串条目与真实账号
-	/// 撞名、避免多次运行互相冲突, 也方便一眼识别出是测试残留(前缀 "test-")
-	fn random_account() -> String {
+	/// 撞名、避免多次运行互相冲突, 也方便一眼识别出是测试残留(前缀 "test-")。声明为
+	/// pub(crate)理由同 TEST_LOCK: services::auth 的测试构造账号名时复用本函数, 不重复实现
+	pub(crate) fn random_account() -> String {
 		let nanos = SystemTime::now()
 			.duration_since(UNIX_EPOCH)
 			.unwrap()
