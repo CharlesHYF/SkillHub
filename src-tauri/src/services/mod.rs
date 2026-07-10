@@ -5,4 +5,5 @@ pub mod dashboard;
 pub mod library;
 pub mod market;
 pub mod portability;
+pub mod setting;
 pub mod sync;

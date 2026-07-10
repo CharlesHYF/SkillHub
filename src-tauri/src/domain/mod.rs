@@ -6,4 +6,5 @@ pub mod auth;
 pub mod market;
 pub mod portability;
 pub mod resource;
+pub mod setting;
 pub mod sync;

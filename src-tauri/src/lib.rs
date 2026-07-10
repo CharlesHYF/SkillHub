@@ -74,6 +74,9 @@ pub fn run() {
 			commands::portability::import_preview,
 			commands::portability::import_bundle,
 			commands::portability::impexp_history,
+			commands::setting::settings_get,
+			commands::setting::settings_save,
+			commands::setting::app_version,
 		])
 		.run(tauri::generate_context!())
 		.expect("运行 Tauri 应用失败");
