@@ -88,6 +88,9 @@ export function NetworkSection({ settings, onChange }: NetworkSectionProps) {
 						onChange={(e) => onChange({ netNoProxy: e.target.value })}
 						placeholder="localhost, 127.0.0.1, *.local"
 					/>
+					<p className="text-xs text-muted-foreground">
+						当前版本此项仅保存, 暂未接入网络请求, 将于后续版本生效
+					</p>
 				</div>
 				<div className="flex flex-col gap-1.5">
 					<label htmlFor="net-timeout" className="text-sm text-muted-foreground">
