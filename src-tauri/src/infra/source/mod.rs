@@ -1,10 +1,11 @@
 // 文件作用: 市场源聚合抽象 —— SourceProvider trait(统一 search/fetch_payload/auth_kind 接口)、
 //           AuthKind(市场源要求的认证类型)、InstallPayload/FileEntry(fetch_payload 的产物形状),
-//           以及 all_sources 全量源注册表。本任务(M2 Task 3)先接入 github_skills 一个源,
-//           mcp_registry(Task 4)/github_mcp(Task 5)实现后在此追加注册
+//           以及 all_sources 全量源注册表。当前仅注册 github_skills 一个源; mcp_registry(Task 4)
+//           已实现但暂缓注册, github_mcp(Task 5)实现后二者一并追加进 all_sources(见该任务范围)
 // 创建日期: 2026-07-09
 
 pub mod github_skills;
+pub mod mcp_registry;
 
 use async_trait::async_trait;
 use reqwest::Client;
