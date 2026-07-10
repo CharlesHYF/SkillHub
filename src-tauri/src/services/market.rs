@@ -17,16 +17,31 @@
 //           拆成两段, 命令层在两段之间才短暂加锁, 临界区内无 await, 从根源规避该问题; refresh
 //           则是二者的组合, 供不受此 Send 约束的调用方(本模块测试、未来可能的后台任务)一次
 //           调用完成整个刷新流程。
+//
+//           下载安装(Task 9): fetch_install_payload(纯异步, 按 source_type 从给定源列表定位
+//           provider 并调用其 fetch_payload, 不碰数据库)与 write_installed(纯同步, 落地文件 +
+//           repo_resource::insert + repo_activity::add, 不含 await)同样遵循上述拆分惯例; install
+//           是二者的组合, 供不受 Send 约束的调用方使用, 命令层(commands::market::market_install)
+//           同样改为三段式(查详情持锁 -> 异步拉取不持锁 -> 落库持锁)调用, 不使用 install 本身。
 // 创建日期: 2026-07-10
 
-use anyhow::Result;
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use anyhow::{anyhow, Context, Result};
 use futures::future::join_all;
 use rusqlite::Connection;
+use serde_json::Value;
 
-use crate::domain::market::{MarketResource, Query, SortBy};
+use crate::domain::agent::McpServerDef;
+use crate::domain::market::{MarketResource, Query, SortBy, SourceId};
+use crate::domain::resource::{Resource, SourceType};
 use crate::infra::http::client;
+use crate::infra::repo_activity;
 use crate::infra::repo_market;
-use crate::infra::source::{AuthKind, SourceProvider};
+use crate::infra::repo_resource::{self, NewResource};
+use crate::infra::source::{AuthKind, FileEntry, InstallPayload, SourceProvider};
 
 /// 供 refresh/fetch_all 内部使用的近乎全量查询参数: 三源(github_skills/mcp_registry/
 /// github_mcp)目前均未使用 search 的 query 入参(各自文档均写明"关键字/分类过滤留给聚合层",
@@ -127,6 +142,196 @@ pub fn detail(conn: &Connection, source_type: i64, ext_id: &str) -> Result<Optio
 	Ok(repo_market::get(conn, source_type, ext_id)?)
 }
 
+/// 按 source_type 在给定源列表里定位对应 provider 并调用其 fetch_payload, 拉取某条市场资源的
+/// 完整安装内容; 纯异步网络调用, 不接触数据库连接(遵循文件头"关于拆分"的既有约定), 供调用方在
+/// 拿到 payload 后再单独调用 write_installed 落库。sources 由调用方传入(生产用 infra::source::
+/// all_sources(), 单测注入 FakeSource), 与 fetch_all 同一测试性约定, 使本函数可脱离真实网络测试。
+/// source_type 在 sources 里找不到匹配 id(理论不会发生: 三源均覆盖 SourceId 全部三个变体, 除非
+/// 调用方注入了残缺的源列表)时返回 Err; cached_detail 通常是此前 detail() 查到的完整市场资源
+/// 记录, 其 install_manifest 决定 fetch_payload 具体怎么拉
+pub async fn fetch_install_payload(
+	sources: &[Box<dyn SourceProvider>],
+	source_type: i64,
+	token: Option<&str>,
+	cached_detail: &MarketResource,
+) -> Result<InstallPayload> {
+	let target_id = SourceId::from_i64(source_type);
+	let provider = sources
+		.iter()
+		.find(|source| source.id() == target_id)
+		.ok_or_else(|| anyhow!("未找到 source_type={source_type} 对应的市场源"))?;
+	let http_client = client();
+	provider
+		.fetch_payload(&http_client, cached_detail, token)
+		.await
+}
+
+/// 把资源名转成安全的文件系统路径片段: 部分来源(如 github_mcp 对 npm 作用域包名的猜测, 见其
+/// search 文档)产出的 name 可能内嵌 '/'(如 "@scope/pkg"), 直接拼进单层目录/文件名会被当成多级
+/// 路径分隔符, 产出意料之外的嵌套目录甚至写入失败(中间目录未创建); 统一替换为 '_' 后再用于落盘
+/// 路径, 不影响数据库里 resource.name 本身(仍原样保留原始名称, 只有构造落盘路径这一步做此转换)
+fn sanitize_path_segment(name: &str) -> String {
+	name.replace(['/', '\\'], "_")
+}
+
+/// 按来源换算落库用的 SourceType(官方/第三方): mcp_registry 是"官方 MCP Registry"(见
+/// domain::market::SourceId 文档字面标注"官方"), 落 Official; github_skills/github_mcp 均是
+/// "聚合可配置 GitHub 仓库列表"的机制(RepoRef 列表本身即面向任意第三方仓库设计, 见两源 Default
+/// 实现文档"用户可配置追加/替换仓库留待后续任务接入配置持久化"), 即便当前默认值恰好指向
+/// Anthropic/MCP 官方仓库, 该聚合"channel"本身面向任意第三方仓库, 故落 ThirdParty。二者边界目前
+/// 较主观(任务未给出精确定义), 留待 Charles 审阅确认是否需要调整
+fn resource_source_type(source_type: SourceId) -> SourceType {
+	match source_type {
+		SourceId::McpRegistry => SourceType::Official,
+		SourceId::GithubSkills | SourceId::GithubMcp => SourceType::ThirdParty,
+	}
+}
+
+/// Skill 安装落地: 把 files 逐个写到 data_dir/skills/<safe_name>/ 下(按 rel_path 建目录+写文件);
+/// 目标目录若已存在(重复安装同名 Skill)先整体清空再重建, 不做增量合并, 与 services::library::
+/// import_skill 的既有惯例一致, 返回该目录完整路径(供落库 local_path 列)
+fn write_skill_files(data_dir: &Path, safe_name: &str, files: &[FileEntry]) -> Result<PathBuf> {
+	let target = data_dir.join("skills").join(safe_name);
+	if target.exists() {
+		fs::remove_dir_all(&target)
+			.with_context(|| format!("清理旧 Skill 目录失败: {}", target.display()))?;
+	}
+	fs::create_dir_all(&target).with_context(|| format!("创建目录失败: {}", target.display()))?;
+	for file in files {
+		let file_path = target.join(&file.rel_path);
+		if let Some(parent) = file_path.parent() {
+			fs::create_dir_all(parent)
+				.with_context(|| format!("创建目录失败: {}", parent.display()))?;
+		}
+		fs::write(&file_path, &file.content)
+			.with_context(|| format!("写入文件失败: {}", file_path.display()))?;
+	}
+	Ok(target)
+}
+
+/// 把 McpServerDef 转为落地到 data_dir/mcp/<name>.json 的 JSON 对象: 不写 name(定义文件内部不
+/// 重复携带 name, 由 Resource.name 承担, 与 services::sync::resource_to_desired/
+/// parse_single_mcp_def 的既有读取约定一致); 有 command 才写 command/args/env, 有 url 才写 url。
+/// 与 infra::adapter::json_mcp::mcp_def_to_json 同一惯例, 各自独立维护一份(体量小, 不值得跨层
+/// 共享, 呼应该文件"各 provider 模块各自独立维护一份"的既有约定)
+fn mcp_def_to_file_json(def: &McpServerDef) -> Value {
+	let mut obj = serde_json::Map::new();
+	if let Some(command) = &def.command {
+		obj.insert("command".to_string(), Value::String(command.clone()));
+	}
+	if !def.args.is_empty() {
+		obj.insert(
+			"args".to_string(),
+			Value::Array(def.args.iter().cloned().map(Value::String).collect()),
+		);
+	}
+	if !def.env.is_empty() {
+		let env_obj: serde_json::Map<String, Value> = def
+			.env
+			.iter()
+			.map(|(k, v)| (k.clone(), Value::String(v.clone())))
+			.collect();
+		obj.insert("env".to_string(), Value::Object(env_obj));
+	}
+	if let Some(url) = &def.url {
+		obj.insert("url".to_string(), Value::String(url.clone()));
+	}
+	Value::Object(obj)
+}
+
+/// Mcp(含由 McpTemplate 折叠而来)安装落地: 用 env_overrides 覆盖 server_def.env 里的同名键
+/// (required_env 已在 fetch_payload 阶段作为空串占位写入该 map, 见 infra::source::github_mcp::
+/// build_server_def 文档; 纯 Mcp 资源通常 env_overrides 为空, 覆盖操作对其是空操作, 不必单独
+/// 分支处理), 序列化为单定义 JSON(不重复携带 name, 见 mcp_def_to_file_json 文档)写入
+/// data_dir/mcp/<safe_name>.json, 返回该文件完整路径(供落库 local_path 列)
+fn write_mcp_def(
+	data_dir: &Path,
+	safe_name: &str,
+	mut server_def: McpServerDef,
+	env_overrides: &BTreeMap<String, String>,
+) -> Result<PathBuf> {
+	for (key, value) in env_overrides {
+		server_def.env.insert(key.clone(), value.clone());
+	}
+
+	let mcp_dir = data_dir.join("mcp");
+	fs::create_dir_all(&mcp_dir).with_context(|| format!("创建目录失败: {}", mcp_dir.display()))?;
+	let target = mcp_dir.join(format!("{safe_name}.json"));
+	let text = serde_json::to_string_pretty(&mcp_def_to_file_json(&server_def))
+		.context("序列化 MCP 定义失败")?;
+	fs::write(&target, text).with_context(|| format!("写入文件失败: {}", target.display()))?;
+	Ok(target)
+}
+
+/// 把 fetch_install_payload 拉回的安装内容落地到本地存储目录(data_dir)并登记为一条 Resource:
+/// Skill 把 payload 携带的全部文件写到 data_dir/skills/<name>/(整树覆盖, 与 services::library::
+/// import_skill "重复安装同名 Skill 不做增量合并"的既有惯例一致); Mcp 用 env_overrides 覆盖
+/// server_def.env 里的同名键后生成单定义 data_dir/mcp/<name>.json(不重复携带 name, 与
+/// services::library::import_mcp 落地的既有文件形状一致, 供 services::sync::resource_to_desired
+/// 按同一约定读回); McpTemplate 在 fetch_payload 阶段已折叠进 InstallPayload::Mcp(required_env
+/// 已作为空串占位写进 server_def.env, 见 infra::source::github_mcp::build_server_def 文档), 本
+/// 函数不再区分, 统一按 Mcp 分支处理。source_type 按来源换算 Official/ThirdParty(见
+/// resource_source_type 文档), 落库(repo_resource::insert)后追加一条"下载"活动(act_type=3),
+/// 最终回查完整 Resource 返回
+pub fn write_installed(
+	conn: &Connection,
+	data_dir: &Path,
+	detail: &MarketResource,
+	payload: InstallPayload,
+	env_overrides: &BTreeMap<String, String>,
+) -> Result<Resource> {
+	let safe_name = sanitize_path_segment(&detail.name);
+	let local_path = match payload {
+		InstallPayload::Skill { files } => write_skill_files(data_dir, &safe_name, &files)?,
+		InstallPayload::Mcp { server_def } => {
+			write_mcp_def(data_dir, &safe_name, server_def, env_overrides)?
+		}
+	};
+
+	let resource_id = repo_resource::insert(
+		conn,
+		&NewResource {
+			res_type: detail.res_type,
+			name: detail.name.clone(),
+			display_name: detail.display_name.clone(),
+			version: detail.version.clone(),
+			source_type: resource_source_type(detail.source_type),
+			local_path: local_path.to_string_lossy().into_owned(),
+			enabled: true,
+		},
+	)?;
+	repo_activity::add(
+		conn,
+		3,
+		i64::from(detail.res_type),
+		&format!("安装 {}", detail.name),
+		&format!("从市场安装(来源 {:?})", detail.source_type),
+	)?;
+
+	repo_resource::get(conn, resource_id)?
+		.ok_or_else(|| anyhow!("安装后未能查回资源: id={resource_id}"))
+}
+
+/// 便捷组合: 先按 (source_type, ext_id) 查市场缓存详情, 再异步拉取安装内容(fetch_install_payload,
+/// 不接触数据库), 最后同步落地入库(write_installed), 一次调用完成整个安装流程, 返回落库后的完整
+/// Resource。供不受 Tauri 命令 Send 约束的调用方使用(本模块测试、未来可能的后台任务);
+/// commands::market::market_install 出于 Send 约束(见文件头注释"关于拆分")改为三段式调用(查详情
+/// 持锁 -> 异步拉取不持锁 -> 落库持锁), 不使用本函数。ext_id 对应的市场资源不存在时返回 Err
+pub async fn install(
+	conn: &Connection,
+	data_dir: &Path,
+	sources: &[Box<dyn SourceProvider>],
+	source_type: i64,
+	ext_id: &str,
+	token: Option<&str>,
+	env_overrides: &BTreeMap<String, String>,
+) -> Result<Resource> {
+	let cached_detail = repo_market::get(conn, source_type, ext_id)?
+		.ok_or_else(|| anyhow!("市场资源不存在: source_type={source_type}, ext_id={ext_id}"))?;
+	let payload = fetch_install_payload(sources, source_type, token, &cached_detail).await?;
+	write_installed(conn, data_dir, &cached_detail, payload, env_overrides)
+}
+
 #[cfg(test)]
 mod tests {
 	use std::sync::{Arc, Mutex};
@@ -134,10 +339,11 @@ mod tests {
 	use async_trait::async_trait;
 	use reqwest::Client;
 
+	use tempfile::tempdir;
+
 	use super::*;
-	use crate::domain::market::{InstallManifest, SourceId};
+	use crate::domain::market::InstallManifest;
 	use crate::domain::resource::ResourceType;
-	use crate::infra::source::InstallPayload;
 
 	/// 建一个已迁移好 10 张表结构的内存库, 供本模块测试复用(migrate 为 pub(crate), 见 infra::store)
 	fn setup_conn() -> Connection {
@@ -181,13 +387,22 @@ mod tests {
 	}
 
 	/// 测试用假源: search 恒返回构造时给定的固定结果(Ok(items) 或 Err), 并记录本次调用收到的
-	/// token, 供断言"仅 GitHub 类源转发令牌"这一路由逻辑; 本模块测试不会调用 fetch_payload,
-	/// 恒返回错误占位(调用即视为测试写错)
+	/// token, 供断言"仅 GitHub 类源转发令牌"这一路由逻辑; fetch_payload 恒返回构造时给定的
+	/// payload_result, 并记录本次调用收到的 token(供 fetch_install_payload 相关测试断言令牌
+	/// 转发), 未显式配置时(见 bailing_payload 便捷构造)保持"调用即视为测试写错"的旧行为
 	struct FakeSource {
 		source_id: SourceId,
 		auth_kind: Option<AuthKind>,
 		result: Result<Vec<MarketResource>, String>,
 		received_token: Arc<Mutex<Option<Option<String>>>>,
+		payload_result: Result<InstallPayload, String>,
+		received_fetch_token: Arc<Mutex<Option<Option<String>>>>,
+	}
+
+	/// fetch_payload 恒报错占位的固定值, 供本模块内不关心安装内容拉取的 search/refresh 系列测试
+	/// 构造 FakeSource 时复用, 避免每处都重复拼一遍同样的 Err 字符串
+	fn bailing_payload() -> Result<InstallPayload, String> {
+		Err("本测试不应调用 fetch_payload".to_string())
 	}
 
 	#[async_trait]
@@ -210,9 +425,12 @@ mod tests {
 			&self,
 			_client: &Client,
 			_resource: &MarketResource,
-			_token: Option<&str>,
+			token: Option<&str>,
 		) -> anyhow::Result<InstallPayload> {
-			anyhow::bail!("本测试不应调用 fetch_payload")
+			*self.received_fetch_token.lock().unwrap() = Some(token.map(str::to_string));
+			self.payload_result
+				.clone()
+				.map_err(|err| anyhow::anyhow!(err))
 		}
 
 		fn auth_kind(&self) -> Option<AuthKind> {
@@ -230,12 +448,16 @@ mod tests {
 			auth_kind: None,
 			result: Err("模拟网络错误".to_string()),
 			received_token: Arc::new(Mutex::new(None)),
+			payload_result: bailing_payload(),
+			received_fetch_token: Arc::new(Mutex::new(None)),
 		});
 		let ok_source: Box<dyn SourceProvider> = Box::new(FakeSource {
 			source_id: SourceId::GithubSkills,
 			auth_kind: Some(AuthKind::GitHub),
 			result: Ok(vec![sample_resource(SourceId::GithubSkills, "ext-1")]),
 			received_token: Arc::new(Mutex::new(None)),
+			payload_result: bailing_payload(),
+			received_fetch_token: Arc::new(Mutex::new(None)),
 		});
 		let sources = vec![failing_source, ok_source];
 
@@ -260,12 +482,16 @@ mod tests {
 			auth_kind: Some(AuthKind::GitHub),
 			result: Ok(vec![]),
 			received_token: github_token_seen.clone(),
+			payload_result: bailing_payload(),
+			received_fetch_token: Arc::new(Mutex::new(None)),
 		});
 		let public_source: Box<dyn SourceProvider> = Box::new(FakeSource {
 			source_id: SourceId::McpRegistry,
 			auth_kind: None,
 			result: Ok(vec![]),
 			received_token: public_token_seen.clone(),
+			payload_result: bailing_payload(),
+			received_fetch_token: Arc::new(Mutex::new(None)),
 		});
 		let sources = vec![github_source, public_source];
 
@@ -356,6 +582,326 @@ mod tests {
 		assert_eq!(
 			detail(&conn, i64::from(SourceId::GithubSkills), "nope").unwrap(),
 			None
+		);
+	}
+
+	// ---------- 下载安装(Task 9): fetch_install_payload / write_installed / install ----------
+
+	fn sample_mcp_server_def(name: &str) -> McpServerDef {
+		McpServerDef {
+			name: name.to_string(),
+			command: Some("npx".to_string()),
+			args: vec!["-y".to_string(), name.to_string()],
+			env: BTreeMap::new(),
+			url: None,
+		}
+	}
+
+	/// 与 sample_resource 同构, 但产出 Mcp 类资源(res_type/install_manifest 均替换), 供本节
+	/// 安装相关测试复用
+	fn sample_mcp_resource(source_type: SourceId, ext_id: &str) -> MarketResource {
+		let mut resource = sample_resource(source_type, ext_id);
+		resource.res_type = ResourceType::Mcp;
+		resource.install_manifest = InstallManifest::Mcp {
+			server_def: sample_mcp_server_def(ext_id),
+		};
+		resource
+	}
+
+	// resource_source_type: mcp_registry 应换算为 Official, github_skills/github_mcp 均换算为
+	// ThirdParty(边界含义见该函数文档, 系依据任务说明做出的判断, 留待 Charles 审阅)
+	#[test]
+	fn resource_source_type_maps_sources_to_official_or_third_party() {
+		assert_eq!(
+			resource_source_type(SourceId::McpRegistry),
+			SourceType::Official
+		);
+		assert_eq!(
+			resource_source_type(SourceId::GithubSkills),
+			SourceType::ThirdParty
+		);
+		assert_eq!(
+			resource_source_type(SourceId::GithubMcp),
+			SourceType::ThirdParty
+		);
+	}
+
+	// write_installed: Skill 类 payload 应把全部文件写到 data_dir/skills/<name>/(含嵌套子目录),
+	// 落库为对应 Resource, 并记一条"下载"活动(act_type=3)
+	#[test]
+	fn write_installed_persists_skill_files_and_records_resource_and_activity() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let detail = sample_resource(SourceId::GithubSkills, "demo-skill");
+		let payload = InstallPayload::Skill {
+			files: vec![
+				FileEntry {
+					rel_path: "SKILL.md".to_string(),
+					content: b"skill body".to_vec(),
+				},
+				FileEntry {
+					rel_path: "scripts/run.sh".to_string(),
+					content: b"#!/bin/sh\necho hi\n".to_vec(),
+				},
+			],
+		};
+
+		let resource =
+			write_installed(&conn, data_dir.path(), &detail, payload, &BTreeMap::new()).unwrap();
+
+		assert_eq!(resource.res_type, ResourceType::Skill);
+		assert_eq!(resource.name, "demo-skill");
+		assert_eq!(resource.version, detail.version);
+		assert_eq!(
+			resource.source_type,
+			SourceType::ThirdParty,
+			"github_skills 落 ThirdParty"
+		);
+		assert!(resource.enabled);
+
+		let target = data_dir.path().join("skills/demo-skill");
+		assert_eq!(resource.local_path, target.to_string_lossy());
+		assert_eq!(
+			fs::read_to_string(target.join("SKILL.md")).unwrap(),
+			"skill body"
+		);
+		assert_eq!(
+			fs::read_to_string(target.join("scripts/run.sh")).unwrap(),
+			"#!/bin/sh\necho hi\n"
+		);
+
+		assert_eq!(
+			repo_resource::get(&conn, resource.id).unwrap(),
+			Some(resource)
+		);
+		let activities = repo_activity::recent(&conn, 10).unwrap();
+		assert_eq!(activities.len(), 1);
+		assert_eq!(activities[0].act_type, 3, "下载");
+		assert_eq!(activities[0].res_type, 1, "Skill");
+	}
+
+	// write_installed: 重复安装同名 Skill(目标目录已存在残留旧文件)应整体清空再重建, 不做增量
+	// 合并, 与 services::library::import_skill 的既有惯例一致
+	#[test]
+	fn write_installed_overwrites_existing_skill_directory_without_merging() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let target = data_dir.path().join("skills/demo-skill");
+		fs::create_dir_all(&target).unwrap();
+		fs::write(target.join("STALE.md"), "旧文件, 应被清理").unwrap();
+
+		let detail = sample_resource(SourceId::GithubSkills, "demo-skill");
+		let payload = InstallPayload::Skill {
+			files: vec![FileEntry {
+				rel_path: "SKILL.md".to_string(),
+				content: b"new body".to_vec(),
+			}],
+		};
+
+		write_installed(&conn, data_dir.path(), &detail, payload, &BTreeMap::new()).unwrap();
+
+		assert!(!target.join("STALE.md").exists(), "旧文件应被清空");
+		assert_eq!(
+			fs::read_to_string(target.join("SKILL.md")).unwrap(),
+			"new body"
+		);
+	}
+
+	// write_installed: Mcp 类 payload 应生成 data_dir/mcp/<name>.json 单定义文件, 不重复携带
+	// name(与 services::library::import_mcp 落地的既有文件形状一致); mcp_registry 来源应换算为
+	// SourceType::Official
+	#[test]
+	fn write_installed_persists_mcp_definition_as_single_file_without_name_field() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let detail = sample_mcp_resource(SourceId::McpRegistry, "demo-mcp");
+		let payload = InstallPayload::Mcp {
+			server_def: sample_mcp_server_def("demo-mcp"),
+		};
+
+		let resource =
+			write_installed(&conn, data_dir.path(), &detail, payload, &BTreeMap::new()).unwrap();
+
+		assert_eq!(resource.res_type, ResourceType::Mcp);
+		assert_eq!(
+			resource.source_type,
+			SourceType::Official,
+			"mcp_registry 落 Official"
+		);
+
+		let target = data_dir.path().join("mcp/demo-mcp.json");
+		assert_eq!(resource.local_path, target.to_string_lossy());
+		let json: Value = serde_json::from_str(&fs::read_to_string(&target).unwrap()).unwrap();
+		assert_eq!(json["command"], "npx");
+		assert_eq!(json["args"][0], "-y");
+		assert!(json.get("name").is_none(), "定义文件不应重复携带 name");
+
+		let activities = repo_activity::recent(&conn, 10).unwrap();
+		assert_eq!(activities.len(), 1);
+		assert_eq!(activities[0].act_type, 3, "下载");
+		assert_eq!(activities[0].res_type, 2, "Mcp");
+	}
+
+	// write_installed: env_overrides 应覆盖 server_def.env 里的同名键 —— 模拟 McpTemplate 的
+	// required_env 在 fetch_payload 阶段已作为空串占位写入 env(见 infra::source::github_mcp::
+	// build_server_def 文档), 安装时由用户通过 env_overrides 填充真实值
+	#[test]
+	fn write_installed_fills_env_overrides_into_mcp_definition() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let detail = sample_mcp_resource(SourceId::GithubMcp, "demo-template-mcp");
+		let mut server_def = sample_mcp_server_def("demo-template-mcp");
+		server_def.env.insert("API_KEY".to_string(), String::new());
+		let payload = InstallPayload::Mcp { server_def };
+		let mut overrides = BTreeMap::new();
+		overrides.insert("API_KEY".to_string(), "sk-real-value".to_string());
+
+		let resource =
+			write_installed(&conn, data_dir.path(), &detail, payload, &overrides).unwrap();
+
+		let json: Value =
+			serde_json::from_str(&fs::read_to_string(&resource.local_path).unwrap()).unwrap();
+		assert_eq!(json["env"]["API_KEY"], "sk-real-value");
+	}
+
+	// write_installed: 名称内嵌 '/'(如 github_mcp 对 npm 作用域包名的猜测 "@scope/pkg", 见其
+	// search 文档)时应把 '/' 替换为 '_' 后再落盘, 不应因误当路径分隔符而写入失败或产生意外的
+	// 嵌套目录
+	#[test]
+	fn write_installed_sanitizes_slash_in_name_for_mcp_file_path() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let detail = sample_mcp_resource(SourceId::GithubMcp, "@acme/server-foo");
+		let payload = InstallPayload::Mcp {
+			server_def: sample_mcp_server_def("@acme/server-foo"),
+		};
+
+		let resource =
+			write_installed(&conn, data_dir.path(), &detail, payload, &BTreeMap::new()).unwrap();
+
+		let expected = data_dir.path().join("mcp/@acme_server-foo.json");
+		assert_eq!(resource.local_path, expected.to_string_lossy());
+		assert!(expected.is_file(), "应落在替换后的安全路径, 不产生嵌套目录");
+	}
+
+	// fetch_install_payload: 应按 source_type 在 sources 里找到匹配的 provider, 调用其
+	// fetch_payload 并原样转发 token, 返回其产出的 payload
+	#[tokio::test]
+	async fn fetch_install_payload_finds_matching_provider_and_forwards_token() {
+		let fetch_token_seen = Arc::new(Mutex::new(None));
+		let expected_payload = InstallPayload::Mcp {
+			server_def: sample_mcp_server_def("demo-mcp"),
+		};
+		let fake: Box<dyn SourceProvider> = Box::new(FakeSource {
+			source_id: SourceId::GithubMcp,
+			auth_kind: Some(AuthKind::GitHub),
+			result: Ok(vec![]),
+			received_token: Arc::new(Mutex::new(None)),
+			payload_result: Ok(expected_payload.clone()),
+			received_fetch_token: fetch_token_seen.clone(),
+		});
+		let sources = vec![fake];
+		let detail = sample_mcp_resource(SourceId::GithubMcp, "demo-mcp");
+
+		let payload = fetch_install_payload(
+			&sources,
+			i64::from(SourceId::GithubMcp),
+			Some("gh-token"),
+			&detail,
+		)
+		.await
+		.unwrap();
+
+		assert_eq!(payload, expected_payload);
+		assert_eq!(
+			*fetch_token_seen.lock().unwrap(),
+			Some(Some("gh-token".to_string()))
+		);
+	}
+
+	// fetch_install_payload: sources 里找不到匹配 source_type 的 provider 应返回 Err, 不 panic
+	#[tokio::test]
+	async fn fetch_install_payload_returns_err_when_no_matching_source() {
+		let sources: Vec<Box<dyn SourceProvider>> = Vec::new();
+		let detail = sample_mcp_resource(SourceId::GithubMcp, "demo-mcp");
+
+		let result =
+			fetch_install_payload(&sources, i64::from(SourceId::GithubMcp), None, &detail).await;
+
+		assert!(result.is_err());
+	}
+
+	// install: 端到端组合(查详情 -> fetch_install_payload -> write_installed), 用 FakeSource
+	// 注入固定 payload 避免真实网络; 应落地文件 + 入库 resource + 记一条"下载"活动
+	#[tokio::test]
+	async fn install_end_to_end_with_fake_source_persists_resource_and_activity() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let cached = sample_resource(SourceId::GithubSkills, "demo-skill");
+		repo_market::upsert_many(&conn, std::slice::from_ref(&cached)).unwrap();
+
+		let fake: Box<dyn SourceProvider> = Box::new(FakeSource {
+			source_id: SourceId::GithubSkills,
+			auth_kind: Some(AuthKind::GitHub),
+			result: Ok(vec![]),
+			received_token: Arc::new(Mutex::new(None)),
+			payload_result: Ok(InstallPayload::Skill {
+				files: vec![FileEntry {
+					rel_path: "SKILL.md".to_string(),
+					content: b"hello".to_vec(),
+				}],
+			}),
+			received_fetch_token: Arc::new(Mutex::new(None)),
+		});
+		let sources = vec![fake];
+
+		let resource = install(
+			&conn,
+			data_dir.path(),
+			&sources,
+			i64::from(SourceId::GithubSkills),
+			"demo-skill",
+			None,
+			&BTreeMap::new(),
+		)
+		.await
+		.unwrap();
+
+		assert_eq!(resource.name, "demo-skill");
+		let target = data_dir.path().join("skills/demo-skill/SKILL.md");
+		assert_eq!(fs::read_to_string(&target).unwrap(), "hello");
+		assert_eq!(
+			repo_resource::get(&conn, resource.id).unwrap(),
+			Some(resource)
+		);
+		let activities = repo_activity::recent(&conn, 10).unwrap();
+		assert_eq!(activities.len(), 1);
+		assert_eq!(activities[0].act_type, 3, "下载");
+	}
+
+	// install: 市场缓存里不存在该 (source_type, ext_id) 时应返回 Err, 不落任何库记录
+	#[tokio::test]
+	async fn install_returns_err_when_market_resource_missing() {
+		let conn = setup_conn();
+		let data_dir = tempdir().unwrap();
+		let sources: Vec<Box<dyn SourceProvider>> = Vec::new();
+
+		let result = install(
+			&conn,
+			data_dir.path(),
+			&sources,
+			i64::from(SourceId::GithubSkills),
+			"nope",
+			None,
+			&BTreeMap::new(),
+		)
+		.await;
+
+		assert!(result.is_err());
+		assert!(
+			repo_resource::list(&conn, &repo_resource::ListFilter::default())
+				.unwrap()
+				.is_empty()
 		);
 	}
 }
