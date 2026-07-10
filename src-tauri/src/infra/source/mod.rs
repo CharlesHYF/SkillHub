@@ -1,9 +1,9 @@
 // 文件作用: 市场源聚合抽象 —— SourceProvider trait(统一 search/fetch_payload/auth_kind 接口)、
 //           AuthKind(市场源要求的认证类型)、InstallPayload/FileEntry(fetch_payload 的产物形状),
-//           以及 all_sources 全量源注册表。当前仅注册 github_skills 一个源; mcp_registry(Task 4)
-//           已实现但暂缓注册, github_mcp(Task 5)实现后二者一并追加进 all_sources(见该任务范围)
+//           以及 all_sources 全量源注册表。三源(github_skills/mcp_registry/github_mcp)均已注册
 // 创建日期: 2026-07-09
 
+pub mod github_mcp;
 pub mod github_skills;
 pub mod mcp_registry;
 
@@ -12,7 +12,9 @@ use reqwest::Client;
 
 use crate::domain::agent::McpServerDef;
 use crate::domain::market::{MarketResource, Query, SourceId};
+use github_mcp::GithubMcpProvider;
 use github_skills::GithubSkillsProvider;
+use mcp_registry::McpRegistryProvider;
 
 /// 市场源要求的认证类型: 对应可在应用内发起 OAuth 的三家身份提供方(GitHub/Google/Microsoft),
 /// 供认证服务(Task 7/8)决定弹哪一种登录方式; SourceProvider::auth_kind 返回 None 表示该源
@@ -78,27 +80,31 @@ pub trait SourceProvider: Send + Sync {
 	fn auth_kind(&self) -> Option<AuthKind>;
 }
 
-/// 全量市场源注册表; 本任务(Task 3)先只注册 github_skills, mcp_registry(Task 4)/
-/// github_mcp(Task 5)实现后在此追加 Box::new(...)
+/// 全量市场源注册表: github_skills/mcp_registry/github_mcp 三源均用各自的生产默认构造注册,
+/// 供聚合层(services::market, Task 6)逐源调用并合并结果
 pub fn all_sources() -> Vec<Box<dyn SourceProvider>> {
-	vec![Box::new(GithubSkillsProvider::default())]
+	vec![
+		Box::new(GithubSkillsProvider::default()),
+		Box::new(McpRegistryProvider::default()),
+		Box::new(GithubMcpProvider::default()),
+	]
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 
-	// all_sources: 本任务应恰好注册 1 个源(github_skills), 且其 id/auth_kind 符合预期;
-	// 兼带验证 SourceProvider 对象安全(能被装箱进 Vec<Box<dyn SourceProvider>>)
+	// all_sources: 应恰好注册 3 个源(github_skills/mcp_registry/github_mcp), 顺序与 id/auth_kind
+	// 均符合预期; 兼带验证 SourceProvider 对象安全(能被装箱进 Vec<Box<dyn SourceProvider>>)
 	#[test]
-	fn all_sources_registers_github_skills_only() {
+	fn all_sources_registers_all_three_sources() {
 		let sources = all_sources();
-		assert_eq!(
-			sources.len(),
-			1,
-			"本任务先只注册 github_skills, Task 4/5 补齐另外两源"
-		);
+		assert_eq!(sources.len(), 3, "三源(Task 3/4/5)均应注册");
 		assert_eq!(sources[0].id(), SourceId::GithubSkills);
+		assert_eq!(sources[1].id(), SourceId::McpRegistry);
+		assert_eq!(sources[2].id(), SourceId::GithubMcp);
 		assert_eq!(sources[0].auth_kind(), Some(AuthKind::GitHub));
+		assert_eq!(sources[1].auth_kind(), None);
+		assert_eq!(sources[2].auth_kind(), Some(AuthKind::GitHub));
 	}
 }
