@@ -104,14 +104,11 @@ fn provider_kind_for(auth_kind: AuthKind) -> ProviderKind {
 	}
 }
 
-/// 认证类型的人类可读标签, 供拼装 "AUTH_REQUIRED:<label>" 错误串(前端据此识别并弹出对应的登录
-/// 引导, 而不是把它当一般错误直接展示)
-fn auth_label(auth_kind: AuthKind) -> &'static str {
-	match auth_kind {
-		AuthKind::GitHub => "GitHub",
-		AuthKind::Google => "Google",
-		AuthKind::Microsoft => "Microsoft",
-	}
+/// 拼装 "AUTH_REQUIRED:<provider>" 特征错误串, 其中 <provider> 是 ProviderKind 的 i64 编码
+/// (GitHub=1/Google=2/Microsoft=3), 与前端 src/api/market.ts::parseAuthRequiredProvider 的数值
+/// 解析约定一致 —— 前端据此弹出对应 provider 的登录引导, 而不是把它当一般错误直接展示
+fn auth_required_error(auth_kind: AuthKind) -> String {
+	format!("AUTH_REQUIRED:{}", i64::from(provider_kind_for(auth_kind)))
 }
 
 /// 判定安装前是否应拦截并要求用户先完成认证: 来源本身无需认证(auth_kind=None, 如 mcp_registry)
@@ -166,7 +163,7 @@ pub async fn market_install(
 
 		if needs_auth_required_error(auth_kind, token.is_some(), detail.auth_required) {
 			// unwrap: needs_auth_required_error 仅在 auth_kind 为 Some 时才可能返回 true
-			return Err(format!("AUTH_REQUIRED:{}", auth_label(auth_kind.unwrap())));
+			return Err(auth_required_error(auth_kind.unwrap()));
 		}
 		(detail, token)
 	};
@@ -198,12 +195,12 @@ mod tests {
 		);
 	}
 
-	// auth_label: 应返回人类可读的英文标签, 供拼装 AUTH_REQUIRED 错误串
+	// auth_required_error: 应拼出 "AUTH_REQUIRED:<i64 编码>", 与前端 parseAuthRequiredProvider 约定一致
 	#[test]
-	fn auth_label_returns_readable_names() {
-		assert_eq!(auth_label(AuthKind::GitHub), "GitHub");
-		assert_eq!(auth_label(AuthKind::Google), "Google");
-		assert_eq!(auth_label(AuthKind::Microsoft), "Microsoft");
+	fn auth_required_error_uses_provider_i64_code() {
+		assert_eq!(auth_required_error(AuthKind::GitHub), "AUTH_REQUIRED:1");
+		assert_eq!(auth_required_error(AuthKind::Google), "AUTH_REQUIRED:2");
+		assert_eq!(auth_required_error(AuthKind::Microsoft), "AUTH_REQUIRED:3");
 	}
 
 	// needs_auth_required_error: 来源无需认证(auth_kind=None)时恒不应拦截, 不论是否有 token/
