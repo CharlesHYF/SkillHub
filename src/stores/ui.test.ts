@@ -15,6 +15,7 @@ describe('useUiStore', () => {
 		expect(state.typeFilter).toBeUndefined();
 		expect(state.keyword).toBe('');
 		expect(state.selectedMarket).toBeNull();
+		expect(state.marketRefreshed).toBe(false);
 	});
 
 	it('setSelectedResourceId 应更新选中资源 id', () => {
@@ -58,5 +59,13 @@ describe('useUiStore', () => {
 		useUiStore.getState().setSelectedMarket({ sourceType: 1, extId: 'demo/skill' });
 		useUiStore.getState().setSelectedMarket(null);
 		expect(useUiStore.getState().selectedMarket).toBeNull();
+	});
+
+	it('setMarketRefreshed 应把市场刷新态置为 true, reset 应还原为 false', () => {
+		useUiStore.getState().setMarketRefreshed();
+		expect(useUiStore.getState().marketRefreshed).toBe(true);
+
+		useUiStore.getState().reset();
+		expect(useUiStore.getState().marketRefreshed).toBe(false);
 	});
 });

@@ -163,4 +163,13 @@ describe('Installed 页面', () => {
 
 		await waitFor(() => expect(syncApply).toHaveBeenCalledWith([10]));
 	});
+
+	it('不应再渲染手动"刷新"按钮(F1 遗留已移除, 数据改由实时保鲜策略自动刷新)', async () => {
+		vi.mocked(libraryList).mockResolvedValue([
+			makeResource({ id: 1, name: 'data-visualizer' }),
+		]);
+		renderInstalled();
+		expect(await screen.findByText('data-visualizer')).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: /^刷新$/ })).not.toBeInTheDocument();
+	});
 });

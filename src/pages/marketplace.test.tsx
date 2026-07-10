@@ -1,6 +1,7 @@
 // 文件作用: Marketplace 页面集成测试(mock src/api/market) —— 卡片渲染/分段与筛选/排序/分类/
 //           分页交互触发 market_search 参数变化/点击卡片经 market_detail 填充详情面板/下载按钮
-//           触发 market_install(鉴权失败时的占位提示)/刷新按钮触发 market_refresh
+//           触发 market_install(鉴权失败时的占位提示)/挂载时市场缓存为空则自动触发 market_refresh
+//           (M5 Task F1: 已移除手动"刷新"按钮)
 // 创建日期: 2026-07-10
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -52,7 +53,9 @@ function renderMarketplace() {
 describe('Marketplace 页面', () => {
 	beforeEach(() => {
 		useUiStore.getState().reset();
-		vi.mocked(marketSearch).mockReset().mockResolvedValue({ items: [], total: 0 });
+		// 默认 total=1(非空), 避免与本文件无关的用例意外触发"缓存为空自动刷新"逻辑(该逻辑本身
+		// 由下方专门的用例覆盖, 见"挂载时市场缓存为空..."与"挂载时市场缓存非空...")
+		vi.mocked(marketSearch).mockReset().mockResolvedValue({ items: [], total: 1 });
 		vi.mocked(marketDetail).mockReset();
 		vi.mocked(marketRefresh).mockReset().mockResolvedValue({ count: 0 });
 		vi.mocked(marketInstall).mockReset();
@@ -240,14 +243,35 @@ describe('Marketplace 页面', () => {
 		expect(await screen.findByText('需在详情页登录')).toBeInTheDocument();
 	});
 
-	it('点击刷新应调用 market_refresh', async () => {
-		const user = userEvent.setup();
-		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+	it('不应再渲染手动"刷新"按钮', async () => {
 		renderMarketplace();
 		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+		expect(screen.queryByRole('button', { name: /刷新/ })).not.toBeInTheDocument();
+	});
 
-		await user.click(screen.getByRole('button', { name: /刷新/ }));
+	it('挂载时市场缓存为空(首次搜索 total=0)应自动调用 market_refresh 并失效重新搜索', async () => {
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+		renderMarketplace();
 
-		await waitFor(() => expect(marketRefresh).toHaveBeenCalled());
+		await waitFor(() => expect(marketRefresh).toHaveBeenCalledTimes(1));
+		// 刷新成功后应失效 market-search 缓存, 触发再次搜索(至少 2 次: 挂载首次 + 刷新后重取)
+		await waitFor(() => expect(marketSearch).toHaveBeenCalledTimes(2));
+	});
+
+	it('挂载时市场缓存非空(首次搜索 total>0)不应自动调用 market_refresh', async () => {
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 5 });
+		renderMarketplace();
+
+		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+		expect(marketRefresh).not.toHaveBeenCalled();
+	});
+
+	it('本会话已刷新过市场缓存时, 即使首次搜索 total=0 也不应再次自动调用 market_refresh', async () => {
+		useUiStore.getState().setMarketRefreshed();
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+		renderMarketplace();
+
+		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+		expect(marketRefresh).not.toHaveBeenCalled();
 	});
 });

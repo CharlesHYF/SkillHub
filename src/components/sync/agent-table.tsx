@@ -9,6 +9,8 @@ import { Eye, Monitor, MoreVertical, RefreshCw, RotateCcw, SquareCheck, Zap } fr
 import type { AgentRow } from '@/api/agent';
 import type { SyncSummary } from '@/api/sync';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { EmptyState } from '@/components/common/empty-state';
+import { SkeletonTable } from '@/components/common/skeleton';
 import { SyncStatusBadge } from '@/components/common/sync-status-badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -31,6 +33,8 @@ interface AgentTableProps {
 	/** agent.id -> 本次会话内最近一次单独同步该 Agent 的结果(见 agent-display.deriveAgentSyncStatus) */
 	lastOutcomeByAgentId: Map<number, SyncSummary>;
 	selectedId: number | null;
+	/** Agent 列表首次加载中: 为真时表格区展示骨架屏而非空态, 避免探测完成前误判为"暂无 Agent" */
+	isLoading?: boolean;
 	onSelectAgent: (agent: AgentRow) => void;
 	/** 触发对给定 Agent id 列表的同步(供工具条批量按钮与行内"立即同步"复用同一入口) */
 	onSyncAgentIds: (agentIds: number[]) => void;
@@ -51,6 +55,7 @@ export function AgentTable({
 	installedCountByAgentId,
 	lastOutcomeByAgentId,
 	selectedId,
+	isLoading = false,
 	onSelectAgent,
 	onSyncAgentIds,
 	isSyncing = false,
@@ -248,10 +253,16 @@ export function AgentTable({
 			</div>
 
 			<div className="min-h-0 overflow-auto rounded-lg border">
-				{agents.length === 0 ? (
-					<p className="py-6 text-center text-sm text-muted-foreground">
-						暂无已连接 Agent
-					</p>
+				{isLoading ? (
+					<SkeletonTable rows={4} columns={6} />
+				) : agents.length === 0 ? (
+					<EmptyState
+						icon={Monitor}
+						title="暂无已连接 Agent"
+						description="启动时会自动探测本机 Claude Code / Cursor 等 Agent, 探测到后将在此列出"
+						autoRefresh
+						size="sm"
+					/>
 				) : (
 					<DataTable
 						columns={columns}
