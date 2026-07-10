@@ -14,6 +14,7 @@ describe('useUiStore', () => {
 		expect(state.selectedAgentId).toBeNull();
 		expect(state.typeFilter).toBeUndefined();
 		expect(state.keyword).toBe('');
+		expect(state.selectedMarket).toBeNull();
 	});
 
 	it('setSelectedResourceId 应更新选中资源 id', () => {
@@ -37,9 +38,25 @@ describe('useUiStore', () => {
 	it('reset 应把所有态还原为初始值', () => {
 		useUiStore.getState().setSelectedResourceId(1);
 		useUiStore.getState().setTypeFilter('skill');
+		useUiStore.getState().setSelectedMarket({ sourceType: 1, extId: 'acme/skills:demo' });
 		useUiStore.getState().reset();
 		const state = useUiStore.getState();
 		expect(state.selectedResourceId).toBeNull();
 		expect(state.typeFilter).toBeUndefined();
+		expect(state.selectedMarket).toBeNull();
+	});
+
+	it('setSelectedMarket 应更新选中的市场资源标识(sourceType 编码 + extId 复合键)', () => {
+		useUiStore.getState().setSelectedMarket({ sourceType: 2, extId: 'demo/mcp-server' });
+		expect(useUiStore.getState().selectedMarket).toEqual({
+			sourceType: 2,
+			extId: 'demo/mcp-server',
+		});
+	});
+
+	it('setSelectedMarket(null) 应清空选中的市场资源标识', () => {
+		useUiStore.getState().setSelectedMarket({ sourceType: 1, extId: 'demo/skill' });
+		useUiStore.getState().setSelectedMarket(null);
+		expect(useUiStore.getState().selectedMarket).toBeNull();
 	});
 });

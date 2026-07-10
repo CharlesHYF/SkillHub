@@ -1,0 +1,253 @@
+// 文件作用: Marketplace 页面集成测试(mock src/api/market) —— 卡片渲染/分段与筛选/排序/分类/
+//           分页交互触发 market_search 参数变化/点击卡片经 market_detail 填充详情面板/下载按钮
+//           触发 market_install(鉴权失败时的占位提示)/刷新按钮触发 market_refresh
+// 创建日期: 2026-07-10
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { MarketResource } from '@/api/market';
+import { useUiStore } from '@/stores/ui';
+import Marketplace from './marketplace';
+
+vi.mock('@/api/market', () => ({
+	marketSearch: vi.fn(),
+	marketDetail: vi.fn(),
+	marketRefresh: vi.fn().mockResolvedValue({ count: 0 }),
+	marketInstall: vi.fn(),
+}));
+
+import { marketSearch, marketDetail, marketRefresh, marketInstall } from '@/api/market';
+
+function makeMarketResource(overrides: Partial<MarketResource> = {}): MarketResource {
+	const name = overrides.name ?? 'data-visualizer';
+	return {
+		sourceType: 'GithubSkills',
+		resType: 'Skill',
+		extId: `acme/skills:${name}`,
+		name,
+		displayName: name,
+		description: '示例描述',
+		author: 'SkillHub Official',
+		version: '1.2.0',
+		stars: 12300,
+		category: 'productivity',
+		tags: ['数据可视化'],
+		authRequired: false,
+		installManifest: { Skill: { repo: 'acme/skills', path: `skills/${name}`, gitRef: 'main' } },
+		updatedAt: '2025-05-20 00:00:00',
+		...overrides,
+	};
+}
+
+function renderMarketplace() {
+	const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+	return render(
+		<QueryClientProvider client={queryClient}>
+			<Marketplace />
+		</QueryClientProvider>,
+	);
+}
+
+describe('Marketplace 页面', () => {
+	beforeEach(() => {
+		useUiStore.getState().reset();
+		vi.mocked(marketSearch).mockReset().mockResolvedValue({ items: [], total: 0 });
+		vi.mocked(marketDetail).mockReset();
+		vi.mocked(marketRefresh).mockReset().mockResolvedValue({ count: 0 });
+		vi.mocked(marketInstall).mockReset();
+	});
+
+	it('应渲染 market_search 返回的卡片, 默认按 Skills(resType=1)查询', async () => {
+		vi.mocked(marketSearch).mockResolvedValue({
+			items: [makeMarketResource({ name: 'data-visualizer' })],
+			total: 1,
+		});
+
+		renderMarketplace();
+
+		expect(await screen.findByText('data-visualizer')).toBeInTheDocument();
+		expect(marketSearch).toHaveBeenLastCalledWith(expect.objectContaining({ resType: 1 }));
+	});
+
+	it('点击 MCP 分段应以 resType=2 重新查询', async () => {
+		const user = userEvent.setup();
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+		renderMarketplace();
+		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+
+		await user.click(screen.getByRole('tab', { name: 'MCP' }));
+
+		await waitFor(() =>
+			expect(marketSearch).toHaveBeenLastCalledWith(expect.objectContaining({ resType: 2 })),
+		);
+	});
+
+	it('搜索框输入应触发带 keyword 的查询', async () => {
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+		renderMarketplace();
+		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+
+		fireEvent.change(screen.getByPlaceholderText('搜索 Skills 和 MCP...'), {
+			target: { value: 'demo' },
+		});
+
+		await waitFor(() =>
+			expect(marketSearch).toHaveBeenLastCalledWith(
+				expect.objectContaining({ keyword: 'demo' }),
+			),
+		);
+	});
+
+	it('已认证/免费筛选 chip 应在当页数据上客户端过滤', async () => {
+		const user = userEvent.setup();
+		vi.mocked(marketSearch).mockResolvedValue({
+			items: [
+				makeMarketResource({ name: 'needs-auth', authRequired: true }),
+				makeMarketResource({ name: 'no-auth', authRequired: false }),
+			],
+			total: 2,
+		});
+		renderMarketplace();
+		expect(await screen.findByText('needs-auth')).toBeInTheDocument();
+
+		await user.click(screen.getByRole('button', { name: '已认证' }));
+		expect(screen.queryByText('no-auth')).not.toBeInTheDocument();
+		expect(screen.getByText('needs-auth')).toBeInTheDocument();
+
+		await user.click(screen.getByRole('button', { name: '免费' }));
+		expect(screen.queryByText('needs-auth')).not.toBeInTheDocument();
+		expect(screen.getByText('no-auth')).toBeInTheDocument();
+	});
+
+	it('推荐/最近更新 chip 应分别以 sort=0/sort=2 重新查询', async () => {
+		const user = userEvent.setup();
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+		renderMarketplace();
+		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+
+		await user.click(screen.getByRole('button', { name: '最近更新' }));
+		await waitFor(() =>
+			expect(marketSearch).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 2 })),
+		);
+
+		await user.click(screen.getByRole('button', { name: '推荐' }));
+		await waitFor(() =>
+			expect(marketSearch).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 0 })),
+		);
+	});
+
+	it('排序下拉选择"星标数"应以 sort=1 重新查询', async () => {
+		const user = userEvent.setup();
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+		renderMarketplace();
+		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+
+		await user.click(screen.getByRole('button', { name: /排序/ }));
+		await user.click(await screen.findByText('星标数'));
+
+		await waitFor(() =>
+			expect(marketSearch).toHaveBeenLastCalledWith(expect.objectContaining({ sort: 1 })),
+		);
+	});
+
+	it('分类下拉选择应以对应 category 重新查询', async () => {
+		const user = userEvent.setup();
+		vi.mocked(marketSearch).mockResolvedValue({
+			items: [makeMarketResource({ category: 'dev-tools' })],
+			total: 1,
+		});
+		renderMarketplace();
+		expect(await screen.findByText('data-visualizer')).toBeInTheDocument();
+
+		await user.click(screen.getByRole('button', { name: /分类/ }));
+		await user.click(await screen.findByText('dev-tools'));
+
+		await waitFor(() =>
+			expect(marketSearch).toHaveBeenLastCalledWith(
+				expect.objectContaining({ category: 'dev-tools' }),
+			),
+		);
+	});
+
+	it('分页点击第 2 页应以 page=2 重新查询', async () => {
+		const user = userEvent.setup();
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 45 });
+		renderMarketplace();
+		// 等页码按钮渲染出来(依赖 total 落到 searchQuery.data 之后才会有 5 页), 而非仅仅等
+		// marketSearch 被调用(调用发生在 promise resolve 之前, 过早的话此时分页还按 total=0 计算)
+		await user.click(await screen.findByRole('button', { name: '2' }));
+
+		await waitFor(() =>
+			expect(marketSearch).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 })),
+		);
+	});
+
+	it('点击卡片应经 market_detail 查询并在详情面板中展示该资源', async () => {
+		const user = userEvent.setup();
+		const resource = makeMarketResource({ name: 'data-visualizer' });
+		vi.mocked(marketSearch).mockResolvedValue({ items: [resource], total: 1 });
+		vi.mocked(marketDetail).mockResolvedValue(resource);
+
+		renderMarketplace();
+		await user.click(await screen.findByText('data-visualizer'));
+
+		await waitFor(() =>
+			expect(marketDetail).toHaveBeenCalledWith(1, 'acme/skills:data-visualizer'),
+		);
+		expect(await screen.findByText('简介')).toBeInTheDocument();
+	});
+
+	it('点击下载应调用 market_install(sourceType 数值编码, extId)', async () => {
+		const user = userEvent.setup();
+		const resource = makeMarketResource({ name: 'data-visualizer' });
+		vi.mocked(marketSearch).mockResolvedValue({ items: [resource], total: 1 });
+		vi.mocked(marketInstall).mockResolvedValue({
+			id: 1,
+			resType: 'Skill',
+			name: 'data-visualizer',
+			displayName: 'data-visualizer',
+			version: '1.2.0',
+			sourceType: 'Official',
+			localPath: '/tmp/data-visualizer',
+			enabled: true,
+			createTime: '2026-07-10 00:00:00',
+			updateTime: '2026-07-10 00:00:00',
+		});
+
+		renderMarketplace();
+		await screen.findByText('data-visualizer');
+		await user.click(screen.getByRole('button', { name: '下载' }));
+
+		await waitFor(() =>
+			expect(marketInstall).toHaveBeenCalledWith(1, 'acme/skills:data-visualizer', undefined),
+		);
+	});
+
+	it('market_install 失败(如需鉴权)应在详情面板展示占位提示"需在详情页登录"', async () => {
+		const user = userEvent.setup();
+		const resource = makeMarketResource({ name: 'data-visualizer', authRequired: true });
+		vi.mocked(marketSearch).mockResolvedValue({ items: [resource], total: 1 });
+		vi.mocked(marketDetail).mockResolvedValue(resource);
+		vi.mocked(marketInstall).mockRejectedValue(new Error('需要鉴权'));
+
+		renderMarketplace();
+		await user.click(await screen.findByText('data-visualizer'));
+		await screen.findByText('简介');
+
+		await user.click(screen.getByRole('button', { name: '下载并安装' }));
+
+		expect(await screen.findByText('需在详情页登录')).toBeInTheDocument();
+	});
+
+	it('点击刷新应调用 market_refresh', async () => {
+		const user = userEvent.setup();
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+		renderMarketplace();
+		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+
+		await user.click(screen.getByRole('button', { name: /刷新/ }));
+
+		await waitFor(() => expect(marketRefresh).toHaveBeenCalled());
+	});
+});
