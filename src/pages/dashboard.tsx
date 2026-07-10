@@ -1,7 +1,9 @@
 // 文件作用: 首页(Dashboard)界面(还原原型第 1 屏) —— 4 张统计卡 + 最近变更 + 快速操作 +
 //           同步状态概览; 数据经 dashboard_summary/activity_recent/agent_list 获取。
 //           M0 阶段临时挂的 version/db health 探针 UI 随本次替换整段移除(app_health 命令本身
-//           仍保留在后端, 只是首页不再读它)
+//           仍保留在后端, 只是首页不再读它)。M5 Task F1: 移除手动"刷新"按钮, 三处数据源改由
+//           refetchInterval 等策略自动保鲜(见 lib/query.ts), 应用启动时的自动初始化(见
+//           App.tsx)也会在 Agent 探测成功后一并失效本页概览
 // 创建日期: 2026-07-09
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -18,7 +20,7 @@ import {
 	Users,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 
 import { agentList } from '@/api/agent';
 import type { AgentRow } from '@/api/agent';
@@ -28,6 +30,7 @@ import { StatCard } from '@/components/common/stat-card';
 import { SyncStatusBadge } from '@/components/common/sync-status-badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { LIVE_QUERY_OPTIONS } from '@/lib/query';
 import { formatRelativeTime } from '@/lib/utils';
 
 const DASHBOARD_SUMMARY_KEY = 'dashboard-summary';
@@ -104,41 +107,32 @@ const AGENT_STATUS_COLUMNS: DataTableColumn<AgentRow>[] = [
 /** 首页(Dashboard): 还原原型第 1 屏 —— 统计卡 + 最近变更 + 快速操作 + 同步状态概览 */
 export default function Dashboard() {
 	const navigate = useNavigate();
-	const queryClient = useQueryClient();
 
 	const summaryQuery = useQuery({
 		queryKey: [DASHBOARD_SUMMARY_KEY],
 		queryFn: dashboardSummary,
+		...LIVE_QUERY_OPTIONS,
 	});
 	const activityQuery = useQuery({
 		queryKey: [ACTIVITY_RECENT_KEY, RECENT_ACTIVITY_LIMIT],
 		queryFn: () => activityRecent(RECENT_ACTIVITY_LIMIT),
+		...LIVE_QUERY_OPTIONS,
 	});
-	const agentsQuery = useQuery({ queryKey: [AGENT_LIST_KEY], queryFn: agentList });
+	const agentsQuery = useQuery({
+		queryKey: [AGENT_LIST_KEY],
+		queryFn: agentList,
+		...LIVE_QUERY_OPTIONS,
+	});
 
 	const summary = summaryQuery.data ?? EMPTY_SUMMARY;
 	const offlineCount = summary.agentCount - summary.onlineCount;
 	const activities = activityQuery.data ?? [];
 	const agents = agentsQuery.data ?? [];
 
-	const isFetching =
-		summaryQuery.isFetching || activityQuery.isFetching || agentsQuery.isFetching;
-
-	/** 顶部"刷新"按钮: 三处数据源统一失效重取, 呼应 Installed/Sync Center 页面的刷新语义 */
-	function refreshAll() {
-		queryClient.invalidateQueries({ queryKey: [DASHBOARD_SUMMARY_KEY] });
-		queryClient.invalidateQueries({ queryKey: [ACTIVITY_RECENT_KEY] });
-		queryClient.invalidateQueries({ queryKey: [AGENT_LIST_KEY] });
-	}
-
 	return (
 		<div className="flex flex-col gap-4">
-			<header className="flex items-center justify-between">
+			<header>
 				<h1 className="text-2xl font-bold">首页 / Dashboard</h1>
-				<Button variant="outline" onClick={refreshAll}>
-					<RefreshCw size={14} className={isFetching ? 'animate-spin' : undefined} />
-					刷新
-				</Button>
 			</header>
 
 			<div className="grid grid-cols-4 gap-4">

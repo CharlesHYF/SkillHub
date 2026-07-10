@@ -1,5 +1,6 @@
 // 文件作用: Sync Center 页面集成测试(mock src/api) —— 统计卡聚合/Agent 表渲染/选中 Agent 打开
-//           差异面板/一键同步触发 sync_apply 并随 onSyncProgress 事件更新进度/完成后失效刷新
+//           差异面板/一键同步触发 sync_apply 并随 onSyncProgress 事件更新进度/完成后失效刷新/
+//           挂载时自动触发 agent_detect(M5 Task F1: 已移除手动"刷新"按钮)
 // 创建日期: 2026-07-09
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
@@ -176,15 +177,20 @@ describe('SyncCenter 页面', () => {
 		await waitFor(() => expect(agentList).toHaveBeenCalledTimes(2));
 	});
 
-	it('点击顶部刷新按钮应调用 agent_detect', async () => {
-		const user = userEvent.setup();
+	it('挂载时应自动调用 agent_detect(不再需要手动点刷新), 其结果落地为 Agent 表数据', async () => {
 		vi.mocked(agentList).mockResolvedValue([]);
 		vi.mocked(agentDetect).mockResolvedValue([makeAgent({ id: 1, name: 'Claude Code' })]);
 
 		renderSyncCenter();
-		await user.click(screen.getByRole('button', { name: /刷新/ }));
 
-		expect(agentDetect).toHaveBeenCalled();
+		await waitFor(() => expect(agentDetect).toHaveBeenCalledTimes(1));
 		expect(await screen.findByText('Claude Code')).toBeInTheDocument();
+	});
+
+	it('不应再渲染手动"刷新"按钮', async () => {
+		vi.mocked(agentList).mockResolvedValue([]);
+		renderSyncCenter();
+		await waitFor(() => expect(agentDetect).toHaveBeenCalled());
+		expect(screen.queryByRole('button', { name: /刷新/ })).not.toBeInTheDocument();
 	});
 });

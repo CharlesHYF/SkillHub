@@ -3,10 +3,12 @@
 //           (diff-detail-panel); 数据经 agent_list/agent_detect 聚合, 每个 Agent 的待同步/
 //           差异明细经 sync_diff 逐个现算(见 services::dashboard::summary 文档注释:
 //           首页只要一个量级参考, 精确差异走同步中心逐 Agent 现算), 同步经 sync_apply 触发,
-//           订阅 sync://progress 事件驱动进度提示; 完成后失效相关 Query 触发刷新
+//           订阅 sync://progress 事件驱动进度提示; 完成后失效相关 Query 触发刷新。
+//           M5 Task F1: 移除手动"刷新"按钮, 改为挂载时自动探测一次 Agent, 之后 Agent 列表/
+//           在线态靠 refetchInterval 保鲜(见 lib/query.ts)
 // 创建日期: 2026-07-09
-import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ListTodo, RefreshCw, Users, Wifi } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { CheckCircle2, ListTodo, Users, Wifi } from 'lucide-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
@@ -26,7 +28,7 @@ import { AgentTable } from '@/components/sync/agent-table';
 import { countDiffByAction, lastResultLabel } from '@/components/sync/agent-display';
 import { DiffDetailPanel } from '@/components/sync/diff-detail-panel';
 import { SyncOverviewCard } from '@/components/sync/sync-overview-card';
-import { Button } from '@/components/ui/button';
+import { LIVE_QUERY_OPTIONS } from '@/lib/query';
 import { useUiStore } from '@/stores/ui';
 
 // 查询 key 与 pages/installed.tsx 保持字面一致(agent-list/resource-agent-links/library-list),
@@ -52,7 +54,11 @@ export default function SyncCenter() {
 		new Map(),
 	);
 
-	const agentsQuery = useQuery({ queryKey: [AGENT_LIST_KEY], queryFn: agentList });
+	const agentsQuery = useQuery({
+		queryKey: [AGENT_LIST_KEY],
+		queryFn: agentList,
+		...LIVE_QUERY_OPTIONS,
+	});
 	const agents = useMemo(() => agentsQuery.data ?? [], [agentsQuery.data]);
 
 	const resourcesQuery = useQuery({ queryKey: [LIBRARY_LIST_KEY], queryFn: () => libraryList() });
@@ -135,6 +141,17 @@ export default function SyncCenter() {
 		onSuccess: (rows) => queryClient.setQueryData([AGENT_LIST_KEY], rows),
 	});
 
+	// 挂载时自动探测一次本机 Agent, 不再等用户点"刷新": agent_detect 是探测本机已知 AI 工具
+	// 实例的只读操作, 幂等(重复调用不产生副作用, 只是再探测一次), 之后 Agent 在线态靠
+	// agentsQuery 的 refetchInterval 保鲜(见 lib/query.ts)。autoDetectRef 只是避免 StrictMode
+	// 开发环境下的双重挂载模拟白白多打一次探测, 不是正确性所必需
+	const autoDetectRef = useRef(false);
+	useEffect(() => {
+		if (autoDetectRef.current) return;
+		autoDetectRef.current = true;
+		detectMutation.mutate();
+	}, []);
+
 	const applyMutation = useMutation({
 		mutationFn: (agentIds: number[]) => syncApply(agentIds),
 		onSuccess: (summary, agentIds) => {
@@ -177,15 +194,8 @@ export default function SyncCenter() {
 
 	return (
 		<div className="flex h-full flex-col gap-4">
-			<header className="flex items-center justify-between">
+			<header>
 				<h1 className="text-2xl font-bold">Agent 同步 / Sync Center</h1>
-				<Button variant="outline" onClick={() => detectMutation.mutate()}>
-					<RefreshCw
-						size={14}
-						className={detectMutation.isPending ? 'animate-spin' : undefined}
-					/>
-					刷新
-				</Button>
 			</header>
 
 			<div className="grid grid-cols-4 gap-4">

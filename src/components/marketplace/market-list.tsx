@@ -56,6 +56,10 @@ interface MarketListProps {
 	items: MarketResource[];
 	/** 服务端总命中数(不受分页/chip 客户端筛选影响) */
 	total: number;
+	/** 搜索请求进行中(含挂载时自动触发的市场缓存刷新); 为真时卡片网格区展示加载态而非"暂无
+	 * 匹配的资源"空态, 避免刷新尚未完成就误判为"确实没有资源"。默认 false, 具体视觉呈现留给
+	 * 后续任务打磨(本任务只保证加载态存在) */
+	isLoading?: boolean;
 	/** 分类下拉选项(由 pages/marketplace 从当前已加载数据派生, 不含"全部分类") */
 	categories: string[];
 	resTypeFilter: 'skill' | 'mcp';
@@ -87,6 +91,7 @@ interface MarketListProps {
 export function MarketList({
 	items,
 	total,
+	isLoading = false,
 	categories,
 	resTypeFilter,
 	keyword,
@@ -200,7 +205,11 @@ export function MarketList({
 			</div>
 
 			<div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-4 overflow-auto">
-				{visibleItems.length === 0 ? (
+				{isLoading ? (
+					<p className="col-span-2 py-10 text-center text-sm text-muted-foreground">
+						加载中...
+					</p>
+				) : visibleItems.length === 0 ? (
 					<p className="col-span-2 py-10 text-center text-sm text-muted-foreground">
 						暂无匹配的资源
 					</p>

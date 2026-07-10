@@ -1,11 +1,13 @@
-// 文件作用: 资源中心(Marketplace)界面(还原原型第 2 屏) —— 顶部标题+刷新, 左侧列表区
-//           (MarketList: 搜索/Skills-MCP 分段/筛选 chips/分类/排序/卡片网格/分页), 右侧详情面板
+// 文件作用: 资源中心(Marketplace)界面(还原原型第 2 屏) —— 顶部标题, 左侧列表区(MarketList:
+//           搜索/Skills-MCP 分段/筛选 chips/分类/排序/卡片网格/分页), 右侧详情面板
 //           (MarketDetailPanel); 数据经 market_search/market_detail 获取, 市场缓存刷新经
 //           market_refresh, 下载安装经 market_install(该后端命令由并行任务实现, 本页先接好调用
-//           链路: 若安装失败, 先占位提示引导用户到详情页登录, 正式的认证弹窗由后续任务实现)
+//           链路: 若安装失败, 先占位提示引导用户到详情页登录, 正式的认证弹窗由后续任务实现)。
+//           M5 Task F1: 移除手动"刷新"按钮, 改为挂载时若首次搜索发现市场缓存为空则自动刷新一次
+//           (不做高频轮询, 市场数据较重, 挂载拉一次 + 用户搜索即可)
 // 创建日期: 2026-07-10
-import { useEffect, useMemo, useState } from 'react';
-import { Info, RefreshCw } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Info } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -18,7 +20,6 @@ import {
 import { MarketDetailPanel } from '@/components/marketplace/market-detail-panel';
 import { MarketList, type MarketChip } from '@/components/marketplace/market-list';
 import { marketResourceKey, sourceTypeToCode } from '@/components/marketplace/market-display';
-import { Button } from '@/components/ui/button';
 import { useUiStore } from '@/stores/ui';
 
 /** 前端 Skills/MCP 分段 -> 后端 market_search 的 resType 数值编码(1-Skill, 2-Mcp),
@@ -41,7 +42,7 @@ const INSTALL_ERROR_PLACEHOLDER = '需在详情页登录';
  * 右侧详情面板 */
 export default function Marketplace() {
 	const queryClient = useQueryClient();
-	const { selectedMarket, setSelectedMarket } = useUiStore();
+	const { selectedMarket, setSelectedMarket, marketRefreshed, setMarketRefreshed } = useUiStore();
 
 	const [resTypeFilter, setResTypeFilter] = useState<'skill' | 'mcp'>('skill');
 	const [keyword, setKeyword] = useState('');
@@ -118,8 +119,25 @@ export default function Marketplace() {
 
 	const refreshMutation = useMutation({
 		mutationFn: marketRefresh,
-		onSuccess: () => queryClient.invalidateQueries({ queryKey: [MARKET_SEARCH_KEY] }),
+		onSuccess: () => {
+			setMarketRefreshed();
+			queryClient.invalidateQueries({ queryKey: [MARKET_SEARCH_KEY] });
+		},
 	});
+
+	// 挂载后只依据"首次搜索"结果判断一次是否需要自动刷新市场缓存, 之后筛选条件变化不再重新判断
+	// (与"挂载拉一次, 不做高频轮询"的既定策略一致); firstSearchCheckedRef 保证本组件本次挂载
+	// 期间只判断一次, marketRefreshed(见 stores/ui.ts)是跨页面/跨挂载共享的会话级守卫, 二者
+	// 共同确保 market_refresh 因"缓存为空"这一原因在本会话内最多被自动触发一次
+	const firstSearchCheckedRef = useRef(false);
+	useEffect(() => {
+		if (firstSearchCheckedRef.current) return;
+		if (searchQuery.isLoading) return;
+		firstSearchCheckedRef.current = true;
+		if (marketRefreshed) return;
+		if ((searchQuery.data?.total ?? 0) > 0) return;
+		refreshMutation.mutate();
+	}, [searchQuery.isLoading, searchQuery.data, marketRefreshed]);
 
 	function handleSelectItem(resource: MarketResource) {
 		setSelectedMarket({
@@ -142,21 +160,15 @@ export default function Marketplace() {
 
 	return (
 		<div className="flex h-full flex-col gap-4">
-			<header className="flex items-center justify-between">
+			<header>
 				<h1 className="text-2xl font-bold">资源中心 / Marketplace</h1>
-				<Button variant="outline" onClick={() => refreshMutation.mutate()}>
-					<RefreshCw
-						size={14}
-						className={refreshMutation.isPending ? 'animate-spin' : undefined}
-					/>
-					刷新
-				</Button>
 			</header>
 
 			<div className="flex min-h-0 flex-1 gap-4">
 				<MarketList
 					items={items}
 					total={searchQuery.data?.total ?? 0}
+					isLoading={searchQuery.isLoading || refreshMutation.isPending}
 					categories={categories}
 					resTypeFilter={resTypeFilter}
 					keyword={keyword}
