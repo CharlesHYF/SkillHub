@@ -90,11 +90,10 @@ export function AccountSection({
 							<div
 								key={provider.num}
 								className="flex flex-col gap-2 rounded-md border p-3"
-								style={{ borderColor: 'var(--sh-border)' }}
 							>
 								<div className="flex items-center justify-between gap-3">
 									<span className="flex items-center gap-2.5 text-sm">
-										<provider.icon size={18} />
+										<provider.icon size={16} />
 										<span className="flex flex-col">
 											<span className="font-medium text-foreground">
 												{provider.label}

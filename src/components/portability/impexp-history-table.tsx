@@ -41,7 +41,9 @@ export function ImpexpHistoryTable({ rows }: ImpexpHistoryTableProps) {
 			</CardHeader>
 			<CardContent>
 				{rows.length === 0 ? (
-					<p className="py-4 text-sm text-muted-foreground">暂无导入导出记录</p>
+					<p className="py-6 text-center text-sm text-muted-foreground">
+						暂无导入导出记录
+					</p>
 				) : (
 					<DataTable columns={columns} rows={rows} rowKey={(row) => row.id} />
 				)}

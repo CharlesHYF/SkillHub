@@ -148,7 +148,7 @@ export function ResourceList({
 				return (
 					<div className="flex items-center gap-3">
 						<span
-							className="flex size-8 shrink-0 items-center justify-center rounded-md"
+							className="flex size-9 shrink-0 items-center justify-center rounded-lg"
 							style={{ background: 'var(--sh-brand-tint)' }}
 						>
 							<Icon size={16} color="var(--sh-brand)" />
@@ -275,17 +275,18 @@ export function ResourceList({
 				</Button>
 			</div>
 
-			<div
-				className="min-h-0 flex-1 overflow-auto rounded-lg border"
-				style={{ borderColor: 'var(--sh-border)' }}
-			>
-				<DataTable
-					columns={columns}
-					rows={pageRows}
-					rowKey={(row) => row.id}
-					onRowClick={onSelectResource}
-					selectedRowKey={selectedId ?? undefined}
-				/>
+			<div className="min-h-0 flex-1 overflow-auto rounded-lg border">
+				{resources.length === 0 ? (
+					<p className="py-6 text-center text-sm text-muted-foreground">暂无匹配的资源</p>
+				) : (
+					<DataTable
+						columns={columns}
+						rows={pageRows}
+						rowKey={(row) => row.id}
+						onRowClick={onSelectResource}
+						selectedRowKey={selectedId ?? undefined}
+					/>
+				)}
 			</div>
 
 			<div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">

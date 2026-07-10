@@ -157,4 +157,10 @@ describe('ResourceList', () => {
 		expect(screen.getByRole('button', { name: /排序/ })).toBeDisabled();
 		expect(screen.getByRole('button', { name: /批量操作/ })).toBeDisabled();
 	});
+
+	it('resources 为空时应展示空态文案, 不渲染表格', () => {
+		render(<ResourceList {...baseProps} resources={[]} />);
+		expect(screen.getByText('暂无匹配的资源')).toBeInTheDocument();
+		expect(screen.queryByRole('table')).not.toBeInTheDocument();
+	});
 });

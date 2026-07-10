@@ -220,10 +220,7 @@ export default function SyncCenter() {
 			</div>
 
 			{isSyncing ? (
-				<div
-					className="flex flex-col gap-1.5 rounded-lg border px-3 py-2"
-					style={{ borderColor: 'var(--sh-border)' }}
-				>
+				<div className="flex flex-col gap-1.5 rounded-lg border px-3 py-2">
 					<p className="text-sm text-muted-foreground">
 						{progress
 							? `正在同步 ${progress.currentName}(${progress.done}/${progress.total})`

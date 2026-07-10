@@ -9,10 +9,7 @@ import { NAV_ITEMS } from './nav-config';
 export function Sidebar() {
 	const { t } = useTranslation();
 	return (
-		<aside
-			className="flex h-full w-56 flex-col border-r"
-			style={{ borderColor: 'var(--sh-border)' }}
-		>
+		<aside className="flex h-full w-56 flex-col border-r">
 			<div className="flex items-center gap-2 px-5 py-5 text-lg font-bold">
 				<Box color="var(--sh-brand)" />
 				SkillHub
@@ -23,7 +20,7 @@ export function Sidebar() {
 						key={item.key}
 						to={item.path}
 						end={item.path === '/'}
-						className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm"
+						className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
 						style={({ isActive }) => ({
 							background: isActive ? 'var(--sh-brand-tint)' : 'transparent',
 							color: isActive ? 'var(--sh-brand)' : 'var(--sh-fg)',

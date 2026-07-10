@@ -47,10 +47,7 @@ function PreviewRow({
 	count: number;
 }) {
 	return (
-		<div
-			className="flex items-center justify-between rounded-md border px-3 py-2 text-sm"
-			style={{ borderColor: 'var(--sh-border)' }}
-		>
+		<div className="flex items-center justify-between rounded-md border px-3 py-2 text-sm">
 			<span className="flex items-center gap-2 text-muted-foreground">
 				{icon}
 				{label}
@@ -177,7 +174,11 @@ export function ImportPanel({
 									count={preview.agent}
 								/>
 								{!preview.schemaOk ? (
-									<p className="text-xs" style={{ color: 'var(--sh-danger)' }}>
+									<p
+										role="alert"
+										className="text-xs"
+										style={{ color: 'var(--sh-danger)' }}
+									>
 										文件结构校验未通过, 请检查导入包是否完整
 									</p>
 								) : null}
@@ -193,7 +194,7 @@ export function ImportPanel({
 									<button
 										type="button"
 										aria-label="说明"
-										className="text-muted-foreground"
+										className="rounded-sm text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
 									>
 										<CircleHelp size={14} />
 									</button>

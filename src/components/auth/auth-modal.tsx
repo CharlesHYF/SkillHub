@@ -114,7 +114,7 @@ export function AuthModal({
 						disabled={isPending}
 						onClick={() => handleOAuthLogin(PROVIDER.GITHUB)}
 					>
-						<Code2 size={16} />
+						<Code2 size={14} />
 						{pendingProvider === PROVIDER.GITHUB ? '登录中...' : '使用 GitHub 登录'}
 					</Button>
 					<Button
@@ -123,7 +123,7 @@ export function AuthModal({
 						disabled={isPending}
 						onClick={() => handleOAuthLogin(PROVIDER.GOOGLE)}
 					>
-						<Globe size={16} />
+						<Globe size={14} />
 						{pendingProvider === PROVIDER.GOOGLE ? '登录中...' : '使用 Google 登录'}
 					</Button>
 					<Button
@@ -132,7 +132,7 @@ export function AuthModal({
 						disabled={isPending}
 						onClick={() => handleOAuthLogin(PROVIDER.MICROSOFT)}
 					>
-						<AppWindow size={16} />
+						<AppWindow size={14} />
 						{pendingProvider === PROVIDER.MICROSOFT
 							? '登录中...'
 							: '使用 Microsoft 登录'}
@@ -143,7 +143,7 @@ export function AuthModal({
 						disabled={isPending}
 						onClick={() => setTokenExpanded((prev) => !prev)}
 					>
-						<KeyRound size={16} />
+						<KeyRound size={14} />
 						输入访问令牌
 					</Button>
 					{tokenExpanded ? (

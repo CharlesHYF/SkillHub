@@ -203,4 +203,10 @@ describe('AgentTable', () => {
 		expect(screen.getByRole('button', { name: '同步全部' })).toBeDisabled();
 		expect(screen.getByRole('button', { name: '一键同步到所有 Agent' })).toBeDisabled();
 	});
+
+	it('agents 为空时应展示空态文案, 不渲染表格', () => {
+		render(<AgentTable {...baseProps} agents={[]} />);
+		expect(screen.getByText('暂无已连接 Agent')).toBeInTheDocument();
+		expect(screen.queryByRole('table')).not.toBeInTheDocument();
+	});
 });

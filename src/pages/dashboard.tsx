@@ -164,7 +164,7 @@ export default function Dashboard() {
 								暂无活动记录
 							</p>
 						) : (
-							<ul className="divide-y" style={{ borderColor: 'var(--sh-border)' }}>
+							<ul className="divide-y">
 								{activities.map((activity) => {
 									const Icon = ACT_TYPE_ICON[activity.actType] ?? RefreshCw;
 									return (

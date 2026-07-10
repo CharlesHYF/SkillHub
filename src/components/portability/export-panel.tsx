@@ -31,7 +31,11 @@ function FieldHint({ text }: { text: string }) {
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
-				<button type="button" aria-label="说明" className="text-muted-foreground">
+				<button
+					type="button"
+					aria-label="说明"
+					className="rounded-sm text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+				>
 					<CircleHelp size={14} />
 				</button>
 			</TooltipTrigger>

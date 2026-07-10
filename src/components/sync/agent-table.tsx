@@ -247,17 +247,20 @@ export function AgentTable({
 				</Button>
 			</div>
 
-			<div
-				className="min-h-0 overflow-auto rounded-lg border"
-				style={{ borderColor: 'var(--sh-border)' }}
-			>
-				<DataTable
-					columns={columns}
-					rows={agents}
-					rowKey={(row) => row.id}
-					onRowClick={onSelectAgent}
-					selectedRowKey={selectedId ?? undefined}
-				/>
+			<div className="min-h-0 overflow-auto rounded-lg border">
+				{agents.length === 0 ? (
+					<p className="py-6 text-center text-sm text-muted-foreground">
+						暂无已连接 Agent
+					</p>
+				) : (
+					<DataTable
+						columns={columns}
+						rows={agents}
+						rowKey={(row) => row.id}
+						onRowClick={onSelectAgent}
+						selectedRowKey={selectedId ?? undefined}
+					/>
+				)}
 			</div>
 		</div>
 	);
