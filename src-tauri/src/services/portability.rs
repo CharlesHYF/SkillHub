@@ -504,16 +504,20 @@ fn detect_bundle_format(path: &Path, bytes: &[u8]) -> Result<DetectedFormat> {
 }
 
 /// zip-slip 防护核心判定: entry_path 是归档条目的原始名称(未经任何处理的不可信输入), 判定它
-/// "词法规范化后是否仍落在自己的根目录内"—— 等价于"把 entry_path 当相对路径 join 到任意一个目标
-/// 根之后再规范化, 结果是否仍以该根为前缀"这一常见判定思路, 只是不真的借助 std::path::Path 的
+/// 是否可安全用作"目标根下的相对落地路径"。改用纯字符串运算, 不借助 std::path::Path 的
 /// join/component 语义(那套语义随编译目标平台变化, 比如 Windows 盘符前缀只有编译到 windows 目标
-/// 才会被识别成 Prefix 分量, 校验逻辑不应该因运行平台不同而结论不同), 改用纯字符串/整数运算,
-/// 不触碰文件系统, 不要求任何路径真实存在, 可安全用于校验阶段:
+/// 才会被识别成 Prefix 分量, 校验逻辑不应因运行平台不同而结论不同), 不触碰文件系统, 不要求路径
+/// 真实存在, 可安全用于校验阶段:
 ///
 /// 1) 显式前缀判定 —— 以 '/'、'\\' 开头, 或形如 "C:" 的盘符前缀, 一律视为绝对路径直接拒绝;
-/// 2) 逐 segment 深度模拟 —— 按 '/' 与 '\\' 双分隔符切分, 空/"." 忽略, ".." 在能与前一个普通
-///    segment 抵消时抵消(如 "a/../b" 规范化为 "b", 仍在根内, 放行), 抵消不了(计数已为 0)则说明
-///    这个 ".." 会向上跳出根, 直接拒绝
+/// 2) ".." 零容忍 —— 按 '/' 与 '\\' 双分隔符切分后, 只要出现任何一个 ".." 分量即拒绝。
+///    本应用自身导出的合法包(见 export_bundle 产出的 skills/<name>/..、mcp/<name>.json 等)绝不
+///    含 "..", 故零容忍不会误杀合法条目; 而此前"能与前一个普通 segment 抵消就放行"的词法规范化
+///    模型, 与下游 group_import_items 按 "skills/<name>/" 前缀二段式拆分再落地的真实消费方式不
+///    匹配 —— 例如 "skills/../pwned/x" 规范化后看似仍在根内(旧逻辑放行), 但拆分出的 <name> 会是
+///    "..", 拼成 data_dir/skills/.. 即指向 data_dir 自身, 触发 land_skill_content 的 remove_dir_all
+///    清空整个数据目录(含 SQLite 库文件), 属灾难级不可恢复的数据丢失。故对 ".." 从校验入口即
+///    零容忍堵死(另有 is_safe_landed_name 在落地前做纵深防御第二道)
 fn is_entry_path_safe(entry_path: &str) -> bool {
 	if entry_path.is_empty() {
 		return false;
@@ -526,17 +530,10 @@ fn is_entry_path_safe(entry_path: &str) -> bool {
 		return false;
 	}
 
-	let mut normal_segment_count: i64 = 0;
+	// 任何 ".." 分量一律拒绝(不再做"能抵消就放行"的规范化); 空/"." 分量无害, 忽略即可
 	for segment in entry_path.split(['/', '\\']) {
-		match segment {
-			"" | "." => continue,
-			".." => {
-				normal_segment_count -= 1;
-				if normal_segment_count < 0 {
-					return false;
-				}
-			}
-			_ => normal_segment_count += 1,
+		if segment == ".." {
+			return false;
 		}
 	}
 	true
@@ -803,6 +800,15 @@ struct ImportItem {
 	files: Vec<(String, Vec<u8>)>,
 }
 
+/// 落地目录/文件名安全校验(zip-slip 纵深防御第二道): 即便 is_entry_path_safe 已在校验阶段对含
+/// ".." 的条目零容忍, 落地前仍对"从条目路径按 skills/<name>/ 前缀二段式拆分出的资源名 <name>"
+/// 独立再校验一次 —— 拒绝空串、"."、".." 以及内嵌 '/'、'\\' 分隔符者。杜绝 data_dir/skills/<name>
+/// (或 data_dir/mcp/<name>.json)因 <name> 为 "."/".."/空而指向 data_dir 自身或其父级/子目录根,
+/// 进而被 land_skill_content 的 remove_dir_all 误删的可能, 与校验入口(is_entry_path_safe)形成双保险
+fn is_safe_landed_name(name: &str) -> bool {
+	!name.is_empty() && name != "." && name != ".." && !name.contains(['/', '\\'])
+}
+
 /// 从已解析导入包的 entries 里按 "skills/<name>/..." 与 "mcp/<name>.json" 两种既定路径形状,
 /// 重新分组出每个资源各自的文件集合, 是 export_bundle 产出路径(bundle_root_rel_path/
 /// collect_dir_files/collect_single_file)的精确逆过程; settings.json/agents.json 两个根级
@@ -817,14 +823,17 @@ fn group_import_items(entries: BTreeMap<String, Vec<u8>>) -> Vec<ImportItem> {
 	for (path, bytes) in entries {
 		if let Some(rest) = path.strip_prefix("skills/") {
 			if let Some((name, inner_rel)) = rest.split_once('/') {
-				skills
-					.entry(name.to_string())
-					.or_default()
-					.push((inner_rel.to_string(), bytes));
+				if is_safe_landed_name(name) {
+					skills
+						.entry(name.to_string())
+						.or_default()
+						.push((inner_rel.to_string(), bytes));
+				}
 			}
 		} else if let Some(rest) = path.strip_prefix("mcp/") {
 			if let Some(name) = rest.strip_suffix(".json") {
-				if !name.contains('/') {
+				// is_safe_landed_name 已涵盖"含分隔符"判定(原 !name.contains('/') 的超集)
+				if is_safe_landed_name(name) {
 					mcps.insert(name.to_string(), bytes);
 				}
 			}
@@ -1671,16 +1680,25 @@ mod tests {
 		serde_json::to_vec(&empty_manifest(1)).unwrap()
 	}
 
-	// is_entry_path_safe: 正常相对路径(含无逃逸的 "..")应放行
+	// is_entry_path_safe: 正常相对路径(合法包实际出现的形状)应放行
 	#[test]
 	fn is_entry_path_safe_accepts_normal_relative_paths() {
 		assert!(is_entry_path_safe("skills/demo-skill/SKILL.md"));
 		assert!(is_entry_path_safe("mcp/demo-mcp.json"));
 		assert!(is_entry_path_safe("manifest.json"));
-		assert!(
-			is_entry_path_safe("skills/demo/../other/SKILL.md"),
-			"抵消后仍在根内的 .. 不应被拒绝"
-		);
+		assert!(is_entry_path_safe("a/b/c/d.txt"));
+	}
+
+	// is_entry_path_safe: 对 ".." 零容忍 —— 即便"抵消后净路径仍在根内"的中段 ".." 也必须拒绝。
+	// 这类路径正是能骗过旧规范化模型、经 group_import_items 拆出 <name>=".." 从而 remove_dir_all
+	// 清空整个 data_dir 的攻击载荷(见 is_entry_path_safe 文档与 land_skill_content), 是本条防线的
+	// 核心回归用例(此前旧实现把第一条断言判为 safe, 即漏洞根因)
+	#[test]
+	fn is_entry_path_safe_rejects_any_dotdot_segment_even_if_net_in_root() {
+		assert!(!is_entry_path_safe("skills/../pwned/SKILL.md"));
+		assert!(!is_entry_path_safe("skills/demo/../other/SKILL.md"));
+		assert!(!is_entry_path_safe("skills/.."));
+		assert!(!is_entry_path_safe("skills/..\\pwned/x"));
 	}
 
 	// is_entry_path_safe: Unix 绝对路径(以 '/' 开头)应拒绝, 对应 brief 的 "/etc/evil" 用例
@@ -1718,6 +1736,34 @@ mod tests {
 	#[test]
 	fn is_entry_path_safe_rejects_empty_path() {
 		assert!(!is_entry_path_safe(""));
+	}
+
+	// group_import_items: 纵深防御 —— 即便不安全的 <name>(".."/"."/空/含分隔符)侥幸到达分组阶段,
+	// 也应被 is_safe_landed_name 跳过, 绝不产出以其为落地名的 ImportItem(否则 land_skill_content
+	// 会对 data_dir/skills/<name> 执行 remove_dir_all, <name> 为 "."/".." 时即清空 skills 根乃至
+	// 整个 data_dir); 同时保证合法项不被误伤
+	#[test]
+	fn group_import_items_skips_unsafe_landed_names() {
+		let mut entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+		entries.insert("skills/../evil/SKILL.md".to_string(), b"x".to_vec());
+		entries.insert("skills/./evil2/SKILL.md".to_string(), b"x".to_vec());
+		entries.insert("skills//empty-name.md".to_string(), b"x".to_vec());
+		entries.insert("mcp/../evil.json".to_string(), b"x".to_vec());
+		// 合法对照项, 确保过滤未误伤正常路径
+		entries.insert("skills/good/SKILL.md".to_string(), b"x".to_vec());
+
+		let items = group_import_items(entries);
+
+		assert!(
+			items
+				.iter()
+				.all(|it| it.name != ".." && it.name != "." && !it.name.is_empty()),
+			"不安全的落地名不应产出任何 ImportItem"
+		);
+		assert!(
+			items.iter().any(|it| it.name == "good"),
+			"合法项 good 应正常保留"
+		);
 	}
 
 	// read_capped: 内容恰好等于上限应放行(边界值不应被误杀)

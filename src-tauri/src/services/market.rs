@@ -174,9 +174,16 @@ pub async fn fetch_install_payload(
 /// 把资源名转成安全的文件系统路径片段: 部分来源(如 github_mcp 对 npm 作用域包名的猜测, 见其
 /// search 文档)产出的 name 可能内嵌 '/'(如 "@scope/pkg"), 直接拼进单层目录/文件名会被当成多级
 /// 路径分隔符, 产出意料之外的嵌套目录甚至写入失败(中间目录未创建); 统一替换为 '_' 后再用于落盘
-/// 路径, 不影响数据库里 resource.name 本身(仍原样保留原始名称, 只有构造落盘路径这一步做此转换)
+/// 路径。另外 "."/".."/空 这几个片段作为单层目录名会指向自身/父级, 而 write_skill_files 会对该
+/// 目录 remove_dir_all, 一旦命中会清空 skills 根乃至整个 data_dir(含数据库), 故一并回落为安全
+/// 占位名。以上转换均不影响数据库里 resource.name 本身(仍原样保留原始名称, 只有构造落盘路径这一步做转换)
 fn sanitize_path_segment(name: &str) -> String {
-	name.replace(['/', '\\'], "_")
+	let replaced = name.replace(['/', '\\'], "_");
+	if replaced.is_empty() || replaced == "." || replaced == ".." {
+		"_".to_string()
+	} else {
+		replaced
+	}
 }
 
 /// 按来源换算落库用的 SourceType(官方/第三方): mcp_registry 是"官方 MCP Registry"(见
@@ -793,6 +800,21 @@ mod tests {
 		let expected = data_dir.path().join("mcp/@acme_server-foo.json");
 		assert_eq!(resource.local_path, expected.to_string_lossy());
 		assert!(expected.is_file(), "应落在替换后的安全路径, 不产生嵌套目录");
+	}
+
+	// sanitize_path_segment: 防目录穿越 —— "."/".."/空 必须回落为安全占位名, 否则 write_skill_files
+	// 会对 data_dir/skills/<片段> 执行 remove_dir_all, 片段为 "."/".." 时会清空 skills 根乃至整个
+	// data_dir(含数据库)。这是与 services::portability zip-slip 同根因的第二处落盘缺口的回归用例
+	#[test]
+	fn sanitize_path_segment_neutralizes_dot_dotdot_and_empty() {
+		assert_eq!(sanitize_path_segment(".."), "_");
+		assert_eq!(sanitize_path_segment("."), "_");
+		assert_eq!(sanitize_path_segment(""), "_");
+		// 正常名与内嵌分隔符名保持既有行为(仅替换分隔符)
+		assert_eq!(sanitize_path_segment("@scope/pkg"), "@scope_pkg");
+		assert_eq!(sanitize_path_segment("normal-skill"), "normal-skill");
+		// "..." 等非精确匹配是合法文件名, 不应被误伤
+		assert_eq!(sanitize_path_segment("..."), "...");
 	}
 
 	// fetch_install_payload: 应按 source_type 在 sources 里找到匹配的 provider, 调用其
