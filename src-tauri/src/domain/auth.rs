@@ -53,12 +53,24 @@ pub struct AuthAccount {
 
 /// 令牌集合: 仅在内存中流转(OAuth 换取 / PAT 校验之后), 使用完应立即写入系统钥匙串并 drop。
 /// 刻意不派生 Serialize/Deserialize: 使其在结构上不可能被误传入任何会落盘或落 JSON 的通路
-/// (如 Tauri 命令返回值、日志打印、serde_json 序列化), 是"绝不入库"要求的编译期兜底
-#[derive(Clone, Debug, PartialEq)]
+/// (如 Tauri 命令返回值、日志打印、serde_json 序列化), 是"绝不入库"要求的编译期兜底。
+/// Debug 亦手写而非派生(见下 impl): 派生会直接打印 access/refresh 明文, 将来某处一旦 {:?}(日志/
+/// 错误串/assert 失败信息)即泄露令牌; 手写版只暴露"是否存在", 从源头堵死此类意外泄露
+#[derive(Clone, PartialEq)]
 pub struct TokenSet {
 	pub access: String,
 	pub refresh: Option<String>,
 	pub expires_at: Option<String>,
+}
+
+impl std::fmt::Debug for TokenSet {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("TokenSet")
+			.field("access", &"<redacted>")
+			.field("refresh", &self.refresh.as_ref().map(|_| "<redacted>"))
+			.field("expires_at", &self.expires_at)
+			.finish()
+	}
 }
 
 /// PKCE(RFC 7636)挑战: OAuth 授权码流程一次性的 verifier/challenge 对, 同样仅在内存中流转、

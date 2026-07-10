@@ -128,7 +128,7 @@ fn client_id_for(provider: ProviderKind) -> &'static str {
 /// expires_in); GitHub 出错时特有地仍返回 200 状态码, 只是响应体换成 error/error_description
 /// (而非非 2xx 状态码), 故 access_token 设为 Option 且显式检查, 不能只凭 HTTP 状态码判定成功;
 /// 全部字段加 #[serde(default)], 容忍任意一方实际响应里缺失某个键(而非仅值为 null)
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct TokenResponse {
 	#[serde(default)]
 	access_token: Option<String>,
@@ -140,6 +140,26 @@ struct TokenResponse {
 	error: Option<String>,
 	#[serde(default)]
 	error_description: Option<String>,
+}
+
+// 手写 Debug 而非派生: access_token/refresh_token 是敏感令牌, 派生会打印明文; 此处只对二者做
+// 存在性脱敏, 保留 error/error_description(非敏感, 便于排查 OAuth 失败)与 expires_in
+impl std::fmt::Debug for TokenResponse {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("TokenResponse")
+			.field(
+				"access_token",
+				&self.access_token.as_ref().map(|_| "<redacted>"),
+			)
+			.field(
+				"refresh_token",
+				&self.refresh_token.as_ref().map(|_| "<redacted>"),
+			)
+			.field("expires_in", &self.expires_in)
+			.field("error", &self.error)
+			.field("error_description", &self.error_description)
+			.finish()
+	}
 }
 
 /// 用授权码换取令牌: POST 到 `{base}` + 该 provider 的 token 路径, 表单体含
