@@ -4,11 +4,13 @@
 //           命令: 刻意分阶段调用 services::market 对应的纯异步(网络拉取)/纯同步(落库)函数,
 //           不在同一次加锁区间跨 await, 避免 state.db() 返回的 std::sync::MutexGuard(!Send)
 //           跨 await 点存活导致命令 Future 整体退化为 !Send(Tauri 要求命令 Future: Send 才能
-//           被其异步运行时 spawn; 详见 services::market 文件头注释"关于拆分")。market_install
-//           另在阶段一(持锁查详情)内判定该来源是否需要认证(见 needs_auth_required_error): 若
-//           来源要求认证且未连接对应账号、该资源又确实 auth_required, 提前返回
-//           "AUTH_REQUIRED:<Provider>" 特征错误串, 供前端据此弹出对应登录引导(不强行要求匿名可
-//           读的公开资源也必须先登录)
+//           被其异步运行时 spawn; 详见 services::market 文件头注释"关于拆分")。market_refresh
+//           另在阶段一(持锁)内按需查询已连接 GitHub 账号的令牌(auth::token_for), 用于提升
+//           GitHub 相关源的限流额度, 未连接时该令牌为 None(仍可正常刷新, 只是走匿名请求受公共
+//           限流约束); market_install 则在阶段一(持锁查详情)内判定该来源是否需要认证(见
+//           needs_auth_required_error): 若来源要求认证且未连接对应账号、该资源又确实
+//           auth_required, 提前返回 "AUTH_REQUIRED:<Provider>" 特征错误串, 供前端据此弹出对应
+//           登录引导(不强行要求匿名可读的公开资源也必须先登录)
 // 创建日期: 2026-07-10
 
 use std::collections::BTreeMap;
@@ -77,17 +79,26 @@ pub fn market_detail(
 	market::detail(&conn, source_type, &ext_id).map_err(|e| e.to_string())
 }
 
-/// 刷新市场缓存: 并发拉取三源全量资源并写入 market_cache。github_token 暂恒传 None(匿名请求):
-/// 应用内认证(Task 7)尚未实现, 且 infra::repo_auth 按设计从不暴露令牌本身或钥匙串引用键
-/// (令牌只进系统钥匙串, 见其文件头注释)——即便本命令先查一次 repo_auth 确认"是否已连接 GitHub
-/// 账号", 也拿不到可用于 Authorization 头的实际令牌字符串, 查了等于没查; 真正接上需要 Task 7
-/// 提供一个封装好 repo_auth+keychain 的"取当前 GitHub 令牌"能力(见本任务报告"疑虑"一节)
+/// 刷新市场缓存: 并发拉取三源全量资源并写入 market_cache。若已连接 GitHub 账号(见
+/// auth::token_for), 取出其令牌用于提升 GitHub 相关源(github_skills/github_mcp)的 API 限流
+/// 额度; 未连接账号时该值为 None, fetch_all 仍会照常对各源发起匿名请求(见其文档), 不强制要求
+/// 用户先登录才能刷新市场缓存。三段式调用与 market_install 同一 Send 安全惯例(阶段一持锁取
+/// token、阶段二不持锁发起网络 I/O、阶段三持锁落库, 临界区内均无 await), 详见文件头注释
 #[tauri::command]
 pub async fn market_refresh(state: State<'_, AppState>) -> Result<MarketRefreshResult, String> {
 	let sources = source::all_sources();
-	// 先完成全部网络 I/O(不接触数据库), 再在下方同步临界区里落库, 详见文件头注释
-	let outcomes = market::fetch_all(&sources, None).await;
 
+	// 阶段一(同步, 持锁): 若已连接 GitHub 账号则取出其令牌, 未连接时为 None(仍可正常刷新,
+	// 只是走匿名请求受公共限流约束)
+	let github_token = {
+		let conn = state.db();
+		auth::token_for(&conn, i64::from(ProviderKind::GitHub)).map_err(|e| e.to_string())?
+	};
+
+	// 阶段二(异步, 不持锁): 并发拉取三源全量资源(不接触数据库), 详见文件头注释
+	let outcomes = market::fetch_all(&sources, github_token.as_deref()).await;
+
+	// 阶段三(同步, 持锁): 落库
 	let conn = state.db();
 	let count = market::write_refresh_results(&conn, outcomes).map_err(|e| e.to_string())?;
 	Ok(MarketRefreshResult { count })
@@ -183,6 +194,18 @@ pub async fn market_install(
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use rusqlite::Connection;
+
+	use crate::domain::auth::{AuthAccount, TokenSet};
+	use crate::infra::keychain::tests::{lock_keychain_tests, random_account};
+
+	/// 建一个已迁移好 10 张表结构的内存库, 供本模块 market_refresh 令牌来源相关测试复用
+	/// (migrate 为 pub(crate), 见 infra::store)
+	fn setup_conn() -> Connection {
+		let mut conn = Connection::open_in_memory().unwrap();
+		crate::infra::store::migrate(&mut conn).unwrap();
+		conn
+	}
 
 	// provider_kind_for: 三个 AuthKind 变体应精确映射到对应的 ProviderKind
 	#[test]
@@ -247,5 +270,52 @@ mod tests {
 			false,
 			false
 		));
+	}
+
+	// ---------- market_refresh 阶段一"取 GitHub 令牌"的真实取值逻辑 ----------
+	// market_refresh 命令体本身需要真实 tauri::State<AppState>, 本仓库未引入 tauri::test 相关
+	// 基础设施(其它命令的既有测试惯例均只测抽出的纯函数, 不直接调用命令本体), 故以下两个测试
+	// 直接调用命令体阶段一实际执行的同一个函数(auth::token_for), 验证"未连接账号 -> None"与
+	// "已连接账号 -> 能取回真实令牌"这两条路径均按预期工作, 覆盖此前 github_token 恒传 None、
+	// 现在改为动态取值这一变更
+
+	// 未连接任何 GitHub 账号时应返回 None; fetch_all 收到 None 后仍会对各源发起匿名请求(见
+	// services::market::fetch_all 文档), 不应因没有账号就报错
+	#[test]
+	fn market_refresh_github_token_lookup_returns_none_without_connected_account() {
+		let conn = setup_conn();
+		let token = auth::token_for(&conn, i64::from(ProviderKind::GitHub)).unwrap();
+		assert_eq!(token, None);
+	}
+
+	// 已通过 auth::store 连接 GitHub 账号后, 应能取回其真实 access token(而非像此前那样恒传
+	// None), 用于提升该源的限流额度
+	#[test]
+	fn market_refresh_github_token_lookup_returns_stored_token_after_connect() {
+		let _guard = lock_keychain_tests();
+		let conn = setup_conn();
+		let account_name = random_account();
+		let account = AuthAccount {
+			id: 0,
+			provider: ProviderKind::GitHub,
+			account: account_name.clone(),
+			scope: "read:user".to_string(),
+			status: true,
+			connect_time: String::new(),
+		};
+		let tokens = TokenSet {
+			access: "gh-connected-token".to_string(),
+			refresh: None,
+			expires_at: None,
+		};
+		auth::store(&conn, &account, &tokens).unwrap();
+
+		let token = auth::token_for(&conn, i64::from(ProviderKind::GitHub)).unwrap();
+
+		assert_eq!(token, Some("gh-connected-token".to_string()));
+
+		// 清理: 避免残留污染系统钥匙串, 复用 logout(其自身行为已在 services::auth 测试里验证,
+		// 此处只借用来清场)
+		auth::logout(&conn, i64::from(ProviderKind::GitHub)).unwrap();
 	}
 }
