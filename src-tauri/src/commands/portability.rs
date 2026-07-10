@@ -13,6 +13,7 @@ use tauri::State;
 use crate::domain::portability::{
 	ConflictStrategy, ExportOptions, ImportOutcome, ImportPreview, Manifest,
 };
+use crate::infra::repo_impexp::{self, ImpexpRow};
 use crate::services::portability;
 use crate::AppState;
 
@@ -79,4 +80,12 @@ pub fn import_bundle(
 	}
 
 	Ok(outcome)
+}
+
+/// 导入导出历史: 返回最近 limit 条导入/导出记录(按时间倒序, 见 infra::repo_impexp::recent),
+/// 供前端"导入导出历史"表渲染。与前端 api 层的契约为 impexp_history{limit}->ImpexpRow[]
+#[tauri::command]
+pub fn impexp_history(state: State<'_, AppState>, limit: i64) -> Result<Vec<ImpexpRow>, String> {
+	let conn = state.db();
+	repo_impexp::recent(&conn, limit).map_err(|e| e.to_string())
 }

@@ -73,6 +73,7 @@ pub fn run() {
 			commands::portability::export_bundle,
 			commands::portability::import_preview,
 			commands::portability::import_bundle,
+			commands::portability::impexp_history,
 		])
 		.run(tauri::generate_context!())
 		.expect("运行 Tauri 应用失败");
