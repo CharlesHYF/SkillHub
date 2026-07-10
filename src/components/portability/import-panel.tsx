@@ -12,6 +12,7 @@ import type { UnlistenFn } from '@tauri-apps/api/event';
 
 import type { ConflictStrategy, ImportPreview } from '@/api/portability';
 import { CONFLICT_STRATEGY_OPTIONS } from './impexp-display';
+import { Skeleton } from '@/components/common/skeleton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -150,7 +151,17 @@ export function ImportPanel({
 								请先拖拽或选择要导入的文件
 							</p>
 						) : isPreviewLoading ? (
-							<p className="text-sm text-muted-foreground">正在解析导入包...</p>
+							// 解析导入包时以骨架屏占位四行预览(Skill/MCP/配置/Agent), 与解析完成后的
+							// PreviewRow 行高一致, 避免白屏或裸文案跳变
+							<div
+								role="status"
+								aria-label="正在解析导入包"
+								className="flex flex-col gap-2"
+							>
+								{[0, 1, 2, 3].map((i) => (
+									<Skeleton key={i} className="h-9 w-full" />
+								))}
+							</div>
 						) : preview ? (
 							<>
 								<PreviewRow

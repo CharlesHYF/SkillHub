@@ -19,6 +19,7 @@ import {
 	type ConflictStrategy,
 	type ExportOptions,
 } from '@/api/portability';
+import { PageHeader } from '@/components/common/page-header';
 import { ExportPanel } from '@/components/portability/export-panel';
 import { ImportPanel } from '@/components/portability/import-panel';
 import { ImpexpHistoryTable } from '@/components/portability/impexp-history-table';
@@ -115,9 +116,10 @@ export default function Portability() {
 
 	return (
 		<div className="flex h-full flex-col gap-4">
-			<header>
-				<h1 className="text-2xl font-bold">导入导出 / Import & Export</h1>
-			</header>
+			<PageHeader
+				title="导入导出 / Import & Export"
+				description="把本地配置导出为迁移包, 或从迁移包导入到本地库"
+			/>
 
 			<div className="grid grid-cols-2 gap-4">
 				<ExportPanel
@@ -144,7 +146,7 @@ export default function Portability() {
 				/>
 			</div>
 
-			<ImpexpHistoryTable rows={historyQuery.data ?? []} />
+			<ImpexpHistoryTable rows={historyQuery.data ?? []} isLoading={historyQuery.isLoading} />
 		</div>
 	);
 }

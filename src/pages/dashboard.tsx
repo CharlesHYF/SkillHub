@@ -10,6 +10,7 @@ import {
 	Download,
 	FileDown,
 	FileUp,
+	History,
 	ListTodo,
 	Monitor,
 	Plug,
@@ -26,6 +27,9 @@ import { agentList } from '@/api/agent';
 import type { AgentRow } from '@/api/agent';
 import { activityRecent, dashboardSummary, type DashboardSummary } from '@/api/dashboard';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { EmptyState } from '@/components/common/empty-state';
+import { PageHeader } from '@/components/common/page-header';
+import { SkeletonList, SkeletonTable } from '@/components/common/skeleton';
 import { StatCard } from '@/components/common/stat-card';
 import { SyncStatusBadge } from '@/components/common/sync-status-badge';
 import { Button } from '@/components/ui/button';
@@ -128,23 +132,41 @@ export default function Dashboard() {
 	const offlineCount = summary.agentCount - summary.onlineCount;
 	const activities = activityQuery.data ?? [];
 	const agents = agentsQuery.data ?? [];
+	const summaryLoading = summaryQuery.isLoading;
 
 	return (
 		<div className="flex flex-col gap-4">
-			<header>
-				<h1 className="text-2xl font-bold">首页 / Dashboard</h1>
-			</header>
+			<PageHeader
+				title="首页 / Dashboard"
+				description="Skill 与 MCP 的总览, 以及各 Agent 的连接与同步状态"
+			/>
 
 			<div className="grid grid-cols-4 gap-4">
-				<StatCard icon={Sparkles} label="Skill 数量" value={summary.skillCount} />
-				<StatCard icon={Plug} label="MCP 数量" value={summary.mcpCount} />
+				<StatCard
+					icon={Sparkles}
+					label="Skill 数量"
+					value={summary.skillCount}
+					loading={summaryLoading}
+				/>
+				<StatCard
+					icon={Plug}
+					label="MCP 数量"
+					value={summary.mcpCount}
+					loading={summaryLoading}
+				/>
 				<StatCard
 					icon={Users}
 					label="已连接 Agent"
 					value={summary.agentCount}
 					hint={`在线 ${summary.onlineCount} · 离线 ${offlineCount}`}
+					loading={summaryLoading}
 				/>
-				<StatCard icon={ListTodo} label="待同步项" value={summary.pendingCount} />
+				<StatCard
+					icon={ListTodo}
+					label="待同步项"
+					value={summary.pendingCount}
+					loading={summaryLoading}
+				/>
 			</div>
 
 			<div className="grid grid-cols-3 gap-4">
@@ -153,10 +175,16 @@ export default function Dashboard() {
 						<CardTitle>最近变更 Recent Changes</CardTitle>
 					</CardHeader>
 					<CardContent>
-						{activities.length === 0 ? (
-							<p className="py-6 text-center text-sm text-muted-foreground">
-								暂无活动记录
-							</p>
+						{activityQuery.isLoading ? (
+							<SkeletonList rows={4} />
+						) : activities.length === 0 ? (
+							<EmptyState
+								icon={History}
+								title="暂无活动记录"
+								description="下载、同步、导入导出等操作都会记录在这里"
+								autoRefresh
+								size="sm"
+							/>
 						) : (
 							<ul className="divide-y">
 								{activities.map((activity) => {
@@ -223,10 +251,16 @@ export default function Dashboard() {
 					</CardAction>
 				</CardHeader>
 				<CardContent>
-					{agents.length === 0 ? (
-						<p className="py-6 text-center text-sm text-muted-foreground">
-							暂无已连接 Agent
-						</p>
+					{agentsQuery.isLoading ? (
+						<SkeletonTable rows={3} columns={3} />
+					) : agents.length === 0 ? (
+						<EmptyState
+							icon={Users}
+							title="暂无已连接 Agent"
+							description="启动时会自动探测本机 Agent, 探测到后将在此列出"
+							autoRefresh
+							size="sm"
+						/>
 					) : (
 						<DataTable
 							columns={AGENT_STATUS_COLUMNS}

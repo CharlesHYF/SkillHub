@@ -3,8 +3,11 @@
 //           (sync_diff)由 pages/sync-center 统一持有
 // 创建日期: 2026-07-09
 import { useState } from 'react';
+import { CheckCircle2, MousePointerClick } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { EmptyState } from '@/components/common/empty-state';
+import { SkeletonTable } from '@/components/common/skeleton';
 import { SyncStatusBadge } from '@/components/common/sync-status-badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toResourceKind } from '@/components/installed/resource-display';
@@ -64,14 +67,22 @@ export function DiffDetailPanel({ diffPlan, isLoading = false }: DiffDetailPanel
 				<CardTitle>差异详情(本地版本 vs Agent 版本)</CardTitle>
 			</CardHeader>
 			<CardContent className="flex min-h-0 flex-1 flex-col gap-3">
-				{diffPlan === undefined ? (
-					<p className="text-sm text-muted-foreground">
-						{isLoading ? '正在计算差异...' : '请从左侧表格选择一个 Agent 查看差异详情'}
-					</p>
+				{isLoading ? (
+					<SkeletonTable rows={4} columns={4} />
+				) : diffPlan === undefined ? (
+					<EmptyState
+						icon={MousePointerClick}
+						title="未选中 Agent"
+						description="请从左侧表格选择一个 Agent 查看差异详情"
+						size="sm"
+					/>
 				) : diffPlan.items.length === 0 ? (
-					<p className="text-sm text-muted-foreground">
-						该 Agent 已与本地库保持一致, 无需同步
-					</p>
+					<EmptyState
+						icon={CheckCircle2}
+						title="已与本地库保持一致"
+						description="该 Agent 的资源与本地库一致, 目前没有需要同步的差异"
+						size="sm"
+					/>
 				) : (
 					<>
 						<Tabs

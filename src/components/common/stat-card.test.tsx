@@ -16,4 +16,10 @@ describe('StatCard', () => {
 		render(<StatCard icon={Box} label="待同步" value={3} hint="较昨日 +1" />);
 		expect(screen.getByText('较昨日 +1')).toBeInTheDocument();
 	});
+
+	it('loading 为真时应以骨架块占位, 不显示数值与 hint', () => {
+		render(<StatCard icon={Box} label="待同步" value={3} hint="较昨日 +1" loading />);
+		expect(screen.queryByText('3')).not.toBeInTheDocument();
+		expect(screen.queryByText('较昨日 +1')).not.toBeInTheDocument();
+	});
 });

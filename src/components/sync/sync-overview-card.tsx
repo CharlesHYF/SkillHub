@@ -2,11 +2,12 @@
 //           待同步总计迷你统计 + 最后同步时间/上次结果/上次详情; 纯展示组件, diffCounts/
 //           lastOutcome 由 pages/sync-center 统一持有并计算
 // 创建日期: 2026-07-09
-import { ListChecks, Minus, Plus, RefreshCw } from 'lucide-react';
+import { ListChecks, Minus, MousePointerClick, Plus, RefreshCw } from 'lucide-react';
 
 import type { AgentRow } from '@/api/agent';
 import type { SyncSummary } from '@/api/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { EmptyState } from '@/components/common/empty-state';
 import { SyncStatusBadge } from '@/components/common/sync-status-badge';
 import { StatCard } from '@/components/common/stat-card';
 import { formatRelativeTime } from '@/lib/utils';
@@ -40,9 +41,12 @@ export function SyncOverviewCard({ agent, diffCounts, lastOutcome }: SyncOvervie
 			</CardHeader>
 			<CardContent className="flex min-h-0 flex-1 flex-col gap-4">
 				{!agent ? (
-					<p className="text-sm text-muted-foreground">
-						请从左侧表格选择一个 Agent 查看同步概览
-					</p>
+					<EmptyState
+						icon={MousePointerClick}
+						title="未选中 Agent"
+						description="请从左侧表格选择一个 Agent 查看同步概览"
+						size="sm"
+					/>
 				) : (
 					<>
 						<p

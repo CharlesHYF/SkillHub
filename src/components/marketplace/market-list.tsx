@@ -3,9 +3,11 @@
 //           回调, 查询态(关键字/分段/分类/排序/分页)与安装 mutation 由 pages/marketplace 统一持有
 // 创建日期: 2026-07-10
 import { Fragment } from 'react';
-import { Search, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ChevronDown, ChevronLeft, ChevronRight, SearchX } from 'lucide-react';
 
 import type { MarketResource } from '@/api/market';
+import { EmptyState } from '@/components/common/empty-state';
+import { SkeletonCards } from '@/components/common/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -206,13 +208,14 @@ export function MarketList({
 
 			<div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-4 overflow-auto">
 				{isLoading ? (
-					<p className="col-span-2 py-10 text-center text-sm text-muted-foreground">
-						加载中...
-					</p>
+					<SkeletonCards count={6} className="col-span-2" />
 				) : visibleItems.length === 0 ? (
-					<p className="col-span-2 py-10 text-center text-sm text-muted-foreground">
-						暂无匹配的资源
-					</p>
+					<EmptyState
+						icon={SearchX}
+						title="暂无匹配的资源"
+						description="没有符合当前搜索或筛选条件的资源, 换个关键字或调整筛选再试试"
+						className="col-span-2"
+					/>
 				) : (
 					visibleItems.map((item) => {
 						const key = marketResourceKey(item);

@@ -23,6 +23,7 @@ import {
 	type SyncProgress,
 	type SyncSummary,
 } from '@/api/sync';
+import { PageHeader } from '@/components/common/page-header';
 import { StatCard } from '@/components/common/stat-card';
 import { AgentTable } from '@/components/sync/agent-table';
 import { countDiffByAction, lastResultLabel } from '@/components/sync/agent-display';
@@ -194,9 +195,10 @@ export default function SyncCenter() {
 
 	return (
 		<div className="flex h-full flex-col gap-4">
-			<header>
-				<h1 className="text-2xl font-bold">Agent 同步 / Sync Center</h1>
-			</header>
+			<PageHeader
+				title="Agent 同步 / Sync Center"
+				description="查看各 Agent 与本地库的差异, 并把本地库同步到 Agent"
+			/>
 
 			<div className="grid grid-cols-4 gap-4">
 				<StatCard
@@ -253,6 +255,7 @@ export default function SyncCenter() {
 
 			<AgentTable
 				agents={agents}
+				isLoading={agentsQuery.isLoading}
 				pendingCountByAgentId={pendingCountByAgentId}
 				installedCountByAgentId={installedCountByAgentId}
 				lastOutcomeByAgentId={lastOutcomeByAgentId}

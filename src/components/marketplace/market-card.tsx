@@ -29,11 +29,14 @@ export function MarketCard({
 }: MarketCardProps) {
 	const Icon = resource.resType === 'Mcp' ? Plug : Sparkles;
 
+	// 卡片整体可点选(打开详情), 键盘可达性由内部"查看详情"/"下载"按钮承载(与列表可点行同一
+	// 分层惯例); 此处只做视觉反馈: hover 轻微抬升 + 阴影加深, selected 用品牌描边 + 轻染底,
+	// 过渡克制(200ms)并尊重 prefers-reduced-motion
 	return (
 		<div
 			data-state={selected ? 'selected' : undefined}
 			onClick={() => onSelect(resource)}
-			className="flex cursor-pointer flex-col gap-3 rounded-lg border p-4 transition-colors"
+			className="flex cursor-pointer flex-col gap-3 rounded-lg border p-4 shadow-xs transition-[transform,box-shadow,border-color,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
 			style={{
 				borderColor: selected ? 'var(--sh-brand)' : 'var(--sh-border)',
 				background: selected ? 'var(--sh-brand-tint)' : 'var(--sh-surface)',

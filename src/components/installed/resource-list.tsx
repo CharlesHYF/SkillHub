@@ -13,11 +13,14 @@ import {
 	ChevronRight,
 	Sparkles,
 	Plug,
+	PackageOpen,
 } from 'lucide-react';
 
 import type { Resource } from '@/api/library';
 import type { ResourceTypeFilter } from '@/stores/ui';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { EmptyState } from '@/components/common/empty-state';
+import { SkeletonTable } from '@/components/common/skeleton';
 import { TypeBadge } from '@/components/common/type-badge';
 import { SyncStatusBadge } from '@/components/common/sync-status-badge';
 import { Button } from '@/components/ui/button';
@@ -50,6 +53,8 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 interface ResourceListProps {
 	resources: Resource[];
+	/** 资源库首次加载中: 为真时表格区展示骨架屏而非空态, 避免加载期误判为"暂无资源" */
+	isLoading?: boolean;
 	/** resource.id -> 已关联(desired=1) Agent 数, 由 pages/installed 从 resourceAgentLinks 聚合而来 */
 	linkCountByResource: Map<number, number>;
 	selectedId: number | null;
@@ -75,6 +80,7 @@ function pageNumbers(current: number, total: number): number[] {
 /** 已安装界面左侧列表区: 分段筛选 + 搜索 + 占位工具栏 + 资源表 + 分页 */
 export function ResourceList({
 	resources,
+	isLoading = false,
 	linkCountByResource,
 	selectedId,
 	typeFilter,
@@ -276,8 +282,18 @@ export function ResourceList({
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-auto rounded-lg border">
-				{resources.length === 0 ? (
-					<p className="py-6 text-center text-sm text-muted-foreground">暂无匹配的资源</p>
+				{isLoading ? (
+					<SkeletonTable rows={6} columns={6} />
+				) : resources.length === 0 ? (
+					<EmptyState
+						icon={PackageOpen}
+						title="暂无匹配的资源"
+						description={
+							keyword || typeFilter
+								? '没有符合当前筛选条件的资源, 试试调整搜索词或切换类型'
+								: '还没有安装任何 Skill 或 MCP, 去资源中心下载一个吧'
+						}
+					/>
 				) : (
 					<DataTable
 						columns={columns}

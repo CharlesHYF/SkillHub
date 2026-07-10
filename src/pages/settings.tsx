@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { authAccounts, authEnterToken, authLogin, authLogout } from '@/api/auth';
 import { settingsGet, settingsSave, type Settings } from '@/api/setting';
+import { PageHeader } from '@/components/common/page-header';
 import { AccountSection } from '@/components/settings/account-section';
 import { NetworkSection } from '@/components/settings/network-section';
 import { StorageSection } from '@/components/settings/storage-section';
@@ -137,9 +138,10 @@ export default function Settings() {
 
 	return (
 		<div className="flex h-full flex-col gap-4">
-			<header>
-				<h1 className="text-2xl font-bold">设置 / Settings</h1>
-			</header>
+			<PageHeader
+				title="设置 / Settings"
+				description="账号认证、存储目录、同步偏好与网络代理"
+			/>
 
 			<div className="grid grid-cols-2 gap-4">
 				<AccountSection

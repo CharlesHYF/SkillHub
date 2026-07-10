@@ -17,6 +17,7 @@ import {
 	marketSearch,
 	type MarketResource,
 } from '@/api/market';
+import { PageHeader } from '@/components/common/page-header';
 import { MarketDetailPanel } from '@/components/marketplace/market-detail-panel';
 import { MarketList, type MarketChip } from '@/components/marketplace/market-list';
 import { marketResourceKey, sourceTypeToCode } from '@/components/marketplace/market-display';
@@ -160,9 +161,10 @@ export default function Marketplace() {
 
 	return (
 		<div className="flex h-full flex-col gap-4">
-			<header>
-				<h1 className="text-2xl font-bold">资源中心 / Marketplace</h1>
-			</header>
+			<PageHeader
+				title="资源中心 / Marketplace"
+				description="发现并下载 Skills 与 MCP, 一键安装到本地库"
+			/>
 
 			<div className="flex min-h-0 flex-1 gap-4">
 				<MarketList

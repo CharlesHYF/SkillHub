@@ -204,9 +204,9 @@ describe('MarketList', () => {
 		expect(screen.getByText('暂无匹配的资源')).toBeInTheDocument();
 	});
 
-	it('isLoading 为真时应展示加载态, 不展示"暂无匹配的资源"空态', () => {
+	it('isLoading 为真时应展示骨架屏加载态, 不展示"暂无匹配的资源"空态', () => {
 		render(<MarketList {...baseProps} items={[]} total={0} isLoading />);
-		expect(screen.getByText('加载中...')).toBeInTheDocument();
+		expect(screen.getByRole('status', { name: '加载中' })).toBeInTheDocument();
 		expect(screen.queryByText('暂无匹配的资源')).not.toBeInTheDocument();
 	});
 });
