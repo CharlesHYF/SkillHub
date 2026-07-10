@@ -1,8 +1,9 @@
 // 文件作用: 设置界面"存储目录 Storage"分区(原型第 7 屏右上卡片) —— 本地 Skill 目录/本地 MCP
-//           目录, 各为输入框 + "浏览"按钮。浏览按钮按钮本身可渲染可点击, 但当前只接内部占位回调,
-//           原生目录选择对话框留 M4 Task 4 接入 src/api/dialog.ts(见 pages/settings 的 TODO
-//           注释), 这里不自行引入 @tauri-apps/plugin-dialog。纯展示 + onChange(patch), 数据由
-//           pages/settings 统一持有(与 export-panel 的 options/onOptionsChange 同一惯例)
+//           目录, 各为输入框 + "浏览"按钮。本组件纯展示 + 回调, 不自行引入
+//           @tauri-apps/plugin-dialog; "浏览"按钮的原生目录选择对话框由 pages/settings 接
+//           src/lib/dialog.ts 的 pickDirectory 实现, 经 onBrowseSkillDir/onBrowseMcpDir 两个
+//           回调传入, 数据与 onChange(patch)一样由 pages/settings 统一持有(与 export-panel 的
+//           options/onOptionsChange 同一惯例)
 // 创建日期: 2026-07-10
 import { FolderOpen, HardDrive } from 'lucide-react';
 
@@ -14,7 +15,7 @@ import { Input } from '@/components/ui/input';
 interface StorageSectionProps {
 	settings: Pick<Settings, 'storageSkillDir' | 'storageMcpDir'>;
 	onChange: (patch: Partial<Settings>) => void;
-	/** "浏览"按钮点击回调, M4 Task 3 先接内部占位, 原生目录对话框留 M4 Task 4 接入 dialog.ts */
+	/** "浏览"按钮点击回调, 由 pages/settings 接 dialog.ts 的 pickDirectory 实现 */
 	onBrowseSkillDir: () => void;
 	onBrowseMcpDir: () => void;
 }

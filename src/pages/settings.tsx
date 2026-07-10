@@ -19,6 +19,7 @@ import { StorageSection } from '@/components/settings/storage-section';
 import { SyncPreferencesSection } from '@/components/settings/sync-preferences-section';
 import { UpdateChannelSection } from '@/components/settings/update-channel-section';
 import { Button } from '@/components/ui/button';
+import { pickDirectory } from '@/lib/dialog';
 
 const SETTINGS_KEY = 'settings';
 const AUTH_ACCOUNTS_KEY = 'auth-accounts';
@@ -122,12 +123,17 @@ export default function Settings() {
 				? (enterTokenMutation.variables?.provider ?? null)
 				: null;
 
-	// 本地 Skill/MCP 目录"浏览"按钮: 按钮已可点击, 但原生目录选择对话框留 M4 Task 4 接入
-	// src/api/dialog.ts, 这里先接占位回调, 不自行引入 @tauri-apps/plugin-dialog
-	// TODO(M4 Task4): 接入原生目录对话框 dialog.ts
-	function handleBrowseSkillDir() {}
-	// TODO(M4 Task4): 接入原生目录对话框 dialog.ts
-	function handleBrowseMcpDir() {}
+	// 本地 Skill/MCP 目录"浏览"按钮: 弹出原生目录选择对话框(src/lib/dialog.ts 的 pickDirectory),
+	// 结果非 null 才 patch 写回对应字段; 用户取消(结果为 null)时维持 draft 原值不变, 与导入导出页
+	// "选择保存位置"/"选择文件"两个入口的取消处理同一惯例
+	async function handleBrowseSkillDir() {
+		const result = await pickDirectory({ defaultPath: draft.storageSkillDir || undefined });
+		if (result !== null) patch({ storageSkillDir: result });
+	}
+	async function handleBrowseMcpDir() {
+		const result = await pickDirectory({ defaultPath: draft.storageMcpDir || undefined });
+		if (result !== null) patch({ storageMcpDir: result });
+	}
 
 	return (
 		<div className="flex h-full flex-col gap-4">

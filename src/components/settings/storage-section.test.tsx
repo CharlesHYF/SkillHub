@@ -1,4 +1,4 @@
-// 文件作用: StorageSection 组件单测(输入回调、浏览按钮可点击占位回调)
+// 文件作用: StorageSection 组件单测(输入回调、浏览按钮可点击并调用回调)
 // 创建日期: 2026-07-10
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -53,7 +53,7 @@ describe('StorageSection', () => {
 		expect(onChange).toHaveBeenCalledWith({ storageMcpDir: 'b' });
 	});
 
-	it('两个"浏览"按钮均应可点击并各自调用对应占位回调', async () => {
+	it('两个"浏览"按钮均应可点击并各自调用对应的 onBrowseSkillDir/onBrowseMcpDir 回调', async () => {
 		const user = userEvent.setup();
 		const { onBrowseSkillDir, onBrowseMcpDir } = renderSection();
 

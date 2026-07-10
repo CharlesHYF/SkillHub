@@ -1,6 +1,7 @@
-// 文件作用: Settings 页面集成测试(mock src/api/setting 与 src/api/auth) —— 五个分区渲染、
-//           切换开关/修改超时改变本地态、保存更改携带完整 Settings、恢复默认回到硬编码默认值、
-//           账号区登录/退出对应 auth api、脏态下保存按钮可用性
+// 文件作用: Settings 页面集成测试(mock src/api/setting、src/api/auth 与 src/lib/dialog) ——
+//           五个分区渲染、切换开关/修改超时改变本地态、保存更改携带完整 Settings、恢复默认回到
+//           硬编码默认值、账号区登录/退出对应 auth api、脏态下保存按钮可用性、存储目录两个"浏览"
+//           按钮接原生目录对话框(pickDirectory)
 // 创建日期: 2026-07-10
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
@@ -21,9 +22,13 @@ vi.mock('@/api/auth', () => ({
 	authLogout: vi.fn(),
 	authEnterToken: vi.fn(),
 }));
+vi.mock('@/lib/dialog', () => ({
+	pickDirectory: vi.fn(),
+}));
 
 import { settingsGet, settingsSave } from '@/api/setting';
 import { authAccounts, authLogin, authLogout, authEnterToken } from '@/api/auth';
+import { pickDirectory } from '@/lib/dialog';
 
 /** 与页面内硬编码的默认设置口径一致(见 pages/settings.tsx DEFAULT_SETTINGS), 独立重复定义,
  * 使本测试文件作为一份不依赖实现内部常量的独立规格(与 portability.test.tsx 的
@@ -97,6 +102,7 @@ describe('Settings 页面', () => {
 		vi.mocked(authEnterToken)
 			.mockReset()
 			.mockResolvedValue(makeAccount({ provider: 'GitHub' }));
+		vi.mocked(pickDirectory).mockReset().mockResolvedValue(null);
 	});
 
 	it('应渲染标题与五个分区标题', async () => {
@@ -190,5 +196,66 @@ describe('Settings 页面', () => {
 		expect(screen.getByRole('switch', { name: '仅同步已启用项' })).not.toBeChecked();
 		expect(screen.getByRole('radio', { name: 'Stable (稳定版)' })).toBeChecked();
 		expect(screen.getByRole('button', { name: '保存更改' })).toBeEnabled();
+	});
+
+	it('点击本地 Skill 目录的"浏览"应调用 pickDirectory, 结果写入该输入框并使保存按钮可用', async () => {
+		const user = userEvent.setup();
+		vi.mocked(pickDirectory).mockResolvedValue('/Users/demo/.skillhub/skills-new');
+		renderSettings();
+		await waitFor(() =>
+			expect(screen.getByLabelText('本地 Skill 目录')).toHaveValue(
+				loadedSettings.storageSkillDir,
+			),
+		);
+
+		const browseButtons = screen.getAllByRole('button', { name: '浏览' });
+		await user.click(browseButtons[0]);
+
+		expect(pickDirectory).toHaveBeenCalled();
+		await waitFor(() =>
+			expect(screen.getByLabelText('本地 Skill 目录')).toHaveValue(
+				'/Users/demo/.skillhub/skills-new',
+			),
+		);
+		expect(screen.getByRole('button', { name: '保存更改' })).toBeEnabled();
+	});
+
+	it('点击本地 MCP 目录的"浏览"应调用 pickDirectory, 结果写入该输入框', async () => {
+		const user = userEvent.setup();
+		vi.mocked(pickDirectory).mockResolvedValue('/Users/demo/.skillhub/mcp-new');
+		renderSettings();
+		await waitFor(() =>
+			expect(screen.getByLabelText('本地 MCP 目录')).toHaveValue(
+				loadedSettings.storageMcpDir,
+			),
+		);
+
+		const browseButtons = screen.getAllByRole('button', { name: '浏览' });
+		await user.click(browseButtons[1]);
+
+		expect(pickDirectory).toHaveBeenCalled();
+		await waitFor(() =>
+			expect(screen.getByLabelText('本地 MCP 目录')).toHaveValue(
+				'/Users/demo/.skillhub/mcp-new',
+			),
+		);
+	});
+
+	it('"浏览"取消(pickDirectory 返回 null)不应改变目录输入框的值', async () => {
+		const user = userEvent.setup();
+		renderSettings();
+		await waitFor(() =>
+			expect(screen.getByLabelText('本地 Skill 目录')).toHaveValue(
+				loadedSettings.storageSkillDir,
+			),
+		);
+
+		const browseButtons = screen.getAllByRole('button', { name: '浏览' });
+		await user.click(browseButtons[0]);
+
+		await waitFor(() => expect(pickDirectory).toHaveBeenCalled());
+		expect(screen.getByLabelText('本地 Skill 目录')).toHaveValue(
+			loadedSettings.storageSkillDir,
+		);
 	});
 });

@@ -1,8 +1,9 @@
 // 文件作用: 导入导出界面右侧"导入 Import"面板 —— 拖拽区(经 Tauri v2 webview 的
-//           onDragDropEvent 拿真实文件路径, 无需后端插件) + 文本路径输入兜底、导入内容预览(按
-//           import_preview 结果渲染 Skill/MCP/配置/Agent 计数与 schema 校验提示)、冲突处理策略/
-//           导入后自动同步勾选、开始导入按钮; 纯展示 + 回调, 数据与提交由 pages/portability 统一
-//           持有("选择文件"原生对话框留后续, M3 先靠拖拽或文本输入拿路径)
+//           onDragDropEvent 拿真实文件路径, 无需后端插件) + "选择文件"按钮(经 pages/portability
+//           接 src/lib/dialog.ts 的 pickOpenFile 拿真实文件路径) + 文本路径输入兜底、导入内容
+//           预览(按 import_preview 结果渲染 Skill/MCP/配置/Agent 计数与 schema 校验提示)、冲突
+//           处理策略/导入后自动同步勾选、开始导入按钮; 纯展示 + 回调, 数据与提交由
+//           pages/portability 统一持有
 // 创建日期: 2026-07-10
 import { useEffect, useState } from 'react';
 import { CircleHelp, CloudUpload, FolderOpen, Plug, Sparkles, Upload, Users } from 'lucide-react';
@@ -20,9 +21,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 
 interface ImportPanelProps {
-	/** 待导入文件路径(拖拽或文本输入拿到的真实路径); 空串表示尚未选择 */
+	/** 待导入文件路径(拖拽、"选择文件"原生对话框或文本输入拿到的真实路径); 空串表示尚未选择 */
 	path: string;
 	onPathChange: (path: string) => void;
+	/** "选择文件"按钮点击回调, 由 pages/portability 接 dialog.ts 的 pickOpenFile 实现 */
+	onBrowseFile: () => void;
 	preview: ImportPreview | undefined;
 	isPreviewLoading: boolean;
 	conflictStrategy: ConflictStrategy;
@@ -61,6 +64,7 @@ function PreviewRow({
 export function ImportPanel({
 	path,
 	onPathChange,
+	onBrowseFile,
 	preview,
 	isPreviewLoading,
 	conflictStrategy,
@@ -128,12 +132,7 @@ export function ImportPanel({
 				</div>
 
 				<div className="flex items-center gap-2">
-					<Button
-						variant="outline"
-						size="sm"
-						disabled
-						title="原生文件选择对话框留后续, 请拖拽文件或在右侧输入完整路径"
-					>
+					<Button variant="outline" size="sm" onClick={onBrowseFile}>
 						<FolderOpen size={14} />
 						选择文件
 					</Button>
