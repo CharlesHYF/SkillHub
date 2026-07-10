@@ -3,10 +3,12 @@
 //           Task 4 追加 VS Code(复用 JsonMcpAdapter, servers_key 为 "servers")与
 //           Codex(TOML 配置, 单独实现 CodexAdapter), 累计 8 款; Task 5 给 8 款工具逐一接上
 //           Skill 落地形态(SkillTarget), 映射关系见 json_mcp_agent_configs 与 all_adapters
-//           内 VsCode/Codex 的构造实参。
+//           内 VsCode/Codex 的构造实参。M5 Task B1 追加 Hermes(YAML 配置, 单独实现
+//           HermesAdapter), 累计 9 款, Skill 落地形态复用 ClaudeSkillsDir(".hermes/skills")。
 // 创建日期: 2026-07-09
 
 pub mod codex;
+pub mod hermes;
 pub mod json_mcp;
 pub mod skill_target;
 pub mod util;
@@ -19,6 +21,7 @@ use crate::domain::agent::{ActualState, AgentKind, DetectedAgent};
 use crate::domain::resource::ResourceType;
 use crate::domain::sync::{DiffPlan, ItemOutcome};
 use codex::CodexAdapter;
+use hermes::HermesAdapter;
 use json_mcp::JsonMcpAdapter;
 use skill_target::SkillTarget;
 
@@ -47,7 +50,8 @@ pub trait AgentAdapter {
 /// Task 4 追加的 VS Code(仍是 JsonMcpAdapter, 只是 servers_key 换成 "servers")与
 /// Codex(TOML, CodexAdapter)在后, 累计 8 款; 每款工具的 SkillTarget(Task 5)按工具种类在此
 /// 逐一指定 —— 6 款走 json_mcp_agent_configs 表里携带的 SkillTarget, VsCode/Codex 因构造
-/// 逻辑单独写在本函数里, 也各自单独指定。
+/// 逻辑单独写在本函数里, 也各自单独指定。M5 Task B1 在末尾追加 Hermes(YAML, HermesAdapter),
+/// 累计 9 款; Skill 落地形态固定为 ClaudeSkillsDir(".hermes/skills"), 与 Claude 家族同形态。
 pub fn all_adapters(home: &Path) -> Vec<Box<dyn AgentAdapter>> {
 	let mut adapters: Vec<Box<dyn AgentAdapter>> = json_mcp_agent_configs()
 		.into_iter()
@@ -77,6 +81,10 @@ pub fn all_adapters(home: &Path) -> Vec<Box<dyn AgentAdapter>> {
 	adapters.push(Box::new(CodexAdapter::new(
 		home.to_path_buf(),
 		SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
+	)));
+	adapters.push(Box::new(HermesAdapter::new(
+		home.to_path_buf(),
+		SkillTarget::ClaudeSkillsDir(PathBuf::from(".hermes/skills")),
 	)));
 
 	adapters
@@ -226,11 +234,12 @@ mod tests {
 		assert!(outcomes.is_empty());
 	}
 
-	// all_adapters 累计应接入 8 款工具: Task 3 的 6 款 JSON mcpServers 在前, Task 4 追加的
-	// VS Code(仍是 JsonMcpAdapter)与 Codex(CodexAdapter)按注册顺序追加在后; 数量与种类应与
-	// 配置表逐一对应, 且每个都应同时声明支持 Mcp 与 Skill(读取与写入均已接入)
+	// all_adapters 累计应接入 9 款工具: Task 3 的 6 款 JSON mcpServers 在前, Task 4 追加的
+	// VS Code(仍是 JsonMcpAdapter)与 Codex(CodexAdapter), M5 Task B1 追加的 Hermes
+	// (HermesAdapter)按注册顺序追加在后; 数量与种类应与配置表逐一对应, 且每个都应同时声明
+	// 支持 Mcp 与 Skill(读取与写入均已接入)
 	#[test]
-	fn all_adapters_registers_eight_tools_with_correct_kinds_and_support() {
+	fn all_adapters_registers_nine_tools_with_correct_kinds_and_support() {
 		let home = PathBuf::from("/tmp/skillhub-test-home");
 		let adapters = all_adapters(&home);
 
@@ -240,8 +249,9 @@ mod tests {
 			.collect();
 		expected_kinds.push(AgentKind::VsCode);
 		expected_kinds.push(AgentKind::Codex);
+		expected_kinds.push(AgentKind::Hermes);
 
-		assert_eq!(adapters.len(), 8, "Task 4 起应累计接入 8 款工具");
+		assert_eq!(adapters.len(), 9, "M5 Task B1 起应累计接入 9 款工具");
 		let actual_kinds: Vec<AgentKind> = adapters.iter().map(|a| a.kind()).collect();
 		assert_eq!(actual_kinds, expected_kinds, "注册顺序与种类应与配置表一致");
 
@@ -351,6 +361,38 @@ mod tests {
 
 		let state = adapter.read_state(&detected[0]).unwrap();
 		assert_eq!(state.mcp.len(), 1, "Codex 应解析出 1 条 McpServerDef");
+		let foo = &state.mcp[0];
+		assert_eq!(foo.name, "foo");
+		assert_eq!(foo.command, Some("node".to_string()));
+		assert_eq!(foo.args, vec!["x".to_string()]);
+	}
+
+	// all_adapters 里的 Hermes 条目应命中 .hermes/config.yaml(顶层 mcp_servers 映射)fixture,
+	// 解析出 command 型服务器一条; 验证 HermesAdapter 已按固定相对路径正确接入
+	#[test]
+	fn all_adapters_hermes_entry_detects_and_reads_config_yaml_fixture() {
+		let dir = tempfile::tempdir().unwrap();
+		let rel = PathBuf::from(".hermes/config.yaml");
+		let abs = dir.path().join(&rel);
+		std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+		std::fs::write(
+			&abs,
+			"mcp_servers:\n  foo:\n    command: node\n    args:\n      - x\n    env:\n      K: V\n",
+		)
+		.unwrap();
+
+		let adapters = all_adapters(dir.path());
+		let adapter = adapters
+			.iter()
+			.find(|a| a.kind() == AgentKind::Hermes)
+			.expect("Hermes 应已注册");
+
+		let detected = adapter.detect();
+		assert_eq!(detected.len(), 1, "Hermes 应命中 fixture");
+		assert_eq!(detected[0].config_path, abs.to_string_lossy());
+
+		let state = adapter.read_state(&detected[0]).unwrap();
+		assert_eq!(state.mcp.len(), 1, "Hermes 应解析出 1 条 McpServerDef");
 		let foo = &state.mcp[0];
 		assert_eq!(foo.name, "foo");
 		assert_eq!(foo.command, Some("node".to_string()));
@@ -469,6 +511,33 @@ mod tests {
 
 		let detected = adapter.detect();
 		assert_eq!(detected.len(), 1, "Codex 应命中 mcp fixture");
+		let state = adapter.read_state(&detected[0]).unwrap();
+		assert_eq!(state.skills.len(), 1);
+		assert_eq!(state.skills[0].name, expected_name);
+	}
+
+	// all_adapters 里的 Hermes 条目应从声明的 SkillTarget(ClaudeSkillsDir(".hermes/skills"))
+	// 读出已装 Skill, 与其 .hermes/config.yaml(顶层 mcp_servers 映射)fixture 各自独立解析
+	#[test]
+	fn all_adapters_hermes_entry_reads_skills_from_declared_skill_target() {
+		let dir = tempfile::tempdir().unwrap();
+		let rel = PathBuf::from(".hermes/config.yaml");
+		let abs = dir.path().join(&rel);
+		std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+		std::fs::write(&abs, "mcp_servers: {}\n").unwrap();
+		let expected_name = write_skill_fixture(
+			dir.path(),
+			&SkillTarget::ClaudeSkillsDir(PathBuf::from(".hermes/skills")),
+		);
+
+		let adapters = all_adapters(dir.path());
+		let adapter = adapters
+			.iter()
+			.find(|a| a.kind() == AgentKind::Hermes)
+			.expect("Hermes 应已注册");
+
+		let detected = adapter.detect();
+		assert_eq!(detected.len(), 1, "Hermes 应命中 mcp fixture");
 		let state = adapter.read_state(&detected[0]).unwrap();
 		assert_eq!(state.skills.len(), 1);
 		assert_eq!(state.skills[0].name, expected_name);

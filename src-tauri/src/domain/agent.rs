@@ -7,7 +7,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 /// AI 工具种类: 对应 agent.agent_kind 列
-/// 1-ClaudeCode, 2-ClaudeDesktop, 3-Cursor, 4-Windsurf, 5-Cline, 6-VsCode, 7-GeminiCli, 8-Codex
+/// 1-ClaudeCode, 2-ClaudeDesktop, 3-Cursor, 4-Windsurf, 5-Cline, 6-VsCode, 7-GeminiCli, 8-Codex,
+/// 9-Hermes(M5 Task B1 追加, 追加在末尾, 不改动既有 8 款的判别值)
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AgentKind {
 	ClaudeCode,
@@ -18,6 +19,7 @@ pub enum AgentKind {
 	VsCode,
 	GeminiCli,
 	Codex,
+	Hermes,
 }
 
 impl AgentKind {
@@ -32,6 +34,7 @@ impl AgentKind {
 			AgentKind::VsCode => 6,
 			AgentKind::GeminiCli => 7,
 			AgentKind::Codex => 8,
+			AgentKind::Hermes => 9,
 		}
 	}
 
@@ -46,6 +49,7 @@ impl AgentKind {
 			AgentKind::VsCode => "VS Code",
 			AgentKind::GeminiCli => "Gemini CLI",
 			AgentKind::Codex => "Codex",
+			AgentKind::Hermes => "Hermes",
 		}
 	}
 
@@ -61,6 +65,7 @@ impl AgentKind {
 			6 => AgentKind::VsCode,
 			7 => AgentKind::GeminiCli,
 			8 => AgentKind::Codex,
+			9 => AgentKind::Hermes,
 			_ => AgentKind::ClaudeCode,
 		}
 	}
@@ -135,7 +140,7 @@ pub struct ActualState {
 mod tests {
 	use super::*;
 
-	const ALL_KINDS: [AgentKind; 8] = [
+	const ALL_KINDS: [AgentKind; 9] = [
 		AgentKind::ClaudeCode,
 		AgentKind::ClaudeDesktop,
 		AgentKind::Cursor,
@@ -144,11 +149,12 @@ mod tests {
 		AgentKind::VsCode,
 		AgentKind::GeminiCli,
 		AgentKind::Codex,
+		AgentKind::Hermes,
 	];
 
-	// AgentKind: 8 个已知编码应与枚举变体精确往返(code -> from_code -> 原变体)
+	// AgentKind: 9 个已知编码应与枚举变体精确往返(code -> from_code -> 原变体)
 	#[test]
-	fn agent_kind_code_round_trips_all_eight_variants() {
+	fn agent_kind_code_round_trips_all_nine_variants() {
 		for (idx, kind) in ALL_KINDS.iter().enumerate() {
 			let expected_code = (idx + 1) as i64;
 			assert_eq!(kind.code(), expected_code);
