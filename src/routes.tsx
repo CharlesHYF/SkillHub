@@ -4,6 +4,7 @@ import type { RouteObject } from 'react-router-dom';
 import { AppShell } from './components/layout/app-shell';
 import Dashboard from './pages/dashboard';
 import Marketplace from './pages/marketplace';
+import MarketplaceDetail from './pages/marketplace-detail';
 import Installed from './pages/installed';
 import SyncCenter from './pages/sync-center';
 import Portability from './pages/portability';
@@ -17,7 +18,7 @@ export const routes: RouteObject[] = [
 		children: [
 			{ index: true, element: <Dashboard /> },
 			{ path: 'marketplace', element: <Marketplace /> },
-			{ path: 'marketplace/:id', element: <Marketplace /> },
+			{ path: 'marketplace/:id', element: <MarketplaceDetail /> },
 			{ path: 'installed', element: <Installed /> },
 			{ path: 'sync', element: <SyncCenter /> },
 			{ path: 'portability', element: <Portability /> },

@@ -12,6 +12,7 @@ import {
 	marketDetail,
 	marketRefresh,
 	marketInstall,
+	parseAuthRequiredProvider,
 	type MarketResource,
 } from './market';
 
@@ -121,5 +122,23 @@ describe('market api', () => {
 			extId: 'demo/mcp-server',
 			envOverrides: { API_KEY: 'secret' },
 		});
+	});
+});
+
+describe('parseAuthRequiredProvider', () => {
+	it('错误消息形如 "AUTH_REQUIRED:<provider>" 时应解析出数值 provider(裸字符串与 Error 均兼容)', () => {
+		expect(parseAuthRequiredProvider(new Error('AUTH_REQUIRED:1'))).toBe(1);
+		expect(parseAuthRequiredProvider('AUTH_REQUIRED:2')).toBe(2);
+		expect(parseAuthRequiredProvider('AUTH_REQUIRED:4')).toBe(4);
+	});
+
+	it('非 AUTH_REQUIRED 错误应返回 null', () => {
+		expect(parseAuthRequiredProvider(new Error('网络异常'))).toBeNull();
+		expect(parseAuthRequiredProvider('some other error')).toBeNull();
+	});
+
+	it('前缀匹配但 provider 段不是合法数字时应兜底为 1(GitHub), 与后端 ProviderKind::from_i64 同一防御性约定', () => {
+		expect(parseAuthRequiredProvider('AUTH_REQUIRED:abc')).toBe(1);
+		expect(parseAuthRequiredProvider('AUTH_REQUIRED:')).toBe(1);
 	});
 });
