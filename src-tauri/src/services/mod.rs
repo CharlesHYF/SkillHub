@@ -4,4 +4,5 @@ pub mod auth;
 pub mod dashboard;
 pub mod library;
 pub mod market;
+pub mod portability;
 pub mod sync;

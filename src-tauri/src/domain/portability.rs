@@ -119,14 +119,18 @@ pub struct Counts {
 	pub agent: i64,
 }
 
-/// 导出清单: 打包产物内 manifest.json 的内容 —— schema 版本、导出时间、内容计数、各文件 sha256
-/// 校验和(供导入时逐一比对, 见 M3 Task 3 的 parse_bundle 校验)
+/// 导出清单: 打包产物内 manifest.json 的内容 —— schema 版本、导出时间、内容计数、各资源精确
+/// 版本(仅 ExportOptions.include_version_lock=true 时非空, 否则为空 map; 键为该资源在包内的
+/// 相对根路径, 如 "skills/demo-skill"/"mcp/demo-mcp.json", 与 checksums 同一路径体系, 见
+/// services::portability::export_bundle)、各文件 sha256 校验和(供导入时逐一比对, 见 M3 Task 3
+/// 的 parse_bundle 校验)
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {
 	pub schema_version: i64,
 	pub exported_at: String,
 	pub counts: Counts,
+	pub versions: BTreeMap<String, String>,
 	pub checksums: BTreeMap<String, String>,
 }
 
@@ -224,11 +228,13 @@ mod tests {
 		assert_eq!(back, opts);
 	}
 
-	// Manifest: 内嵌 Counts/checksums 应整体序列化为 camelCase, 且能 JSON 往返还原
+	// Manifest: 内嵌 Counts/versions/checksums 应整体序列化为 camelCase, 且能 JSON 往返还原
 	#[test]
 	fn manifest_round_trips_through_json_with_nested_counts_and_checksums() {
 		let mut checksums = BTreeMap::new();
 		checksums.insert("skills/demo/SKILL.md".to_string(), "abc123".to_string());
+		let mut versions = BTreeMap::new();
+		versions.insert("skills/demo".to_string(), "1.2.0".to_string());
 		let manifest = Manifest {
 			schema_version: 1,
 			exported_at: "2026-07-10T00:00:00Z".to_string(),
@@ -238,6 +244,7 @@ mod tests {
 				config: 1,
 				agent: 0,
 			},
+			versions,
 			checksums,
 		};
 		let json = serde_json::to_value(&manifest).unwrap();
@@ -245,6 +252,7 @@ mod tests {
 		assert_eq!(json["exportedAt"], "2026-07-10T00:00:00Z");
 		assert_eq!(json["counts"]["skill"], 3);
 		assert_eq!(json["counts"]["mcp"], 2);
+		assert_eq!(json["versions"]["skills/demo"], "1.2.0");
 		assert_eq!(json["checksums"]["skills/demo/SKILL.md"], "abc123");
 		assert!(json.get("schema_version").is_none());
 

@@ -9,6 +9,7 @@ pub mod dashboard;
 pub mod health;
 pub mod library;
 pub mod market;
+pub mod portability;
 pub mod sync;
 
 /// 取当前用户家目录; 取不到(容器/极端环境变量缺失等罕见场景)时返回错误信息而非 panic,

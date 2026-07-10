@@ -42,6 +42,12 @@ rand = "0.10"
 # futures: join_all 并发聚合市场三源的 search 调用(services::market::refresh); 已由 reqwest/
 # tauri 的传递依赖间接锁定 0.3.32, 此处提升为直接依赖以便在自身代码里 use
 futures = "0.3"
+# zip/tar+flate2: 导出打包(services::portability::export_bundle)分别支持 Zip/Tar.gz 两种归档
+# 格式; zip 关闭默认特性只留 deflate(不需要 aes 加密/zstd/bzip2/时间戳相关等额外能力), tar 只管
+# 归档结构本身, 压缩交给 flate2(GzEncoder)包一层, 与 Tar.gz 的常规组合方式一致
+zip = { version = "8", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
 
 [dev-dependencies]
 tempfile = "3"

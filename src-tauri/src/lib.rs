@@ -70,6 +70,7 @@ pub fn run() {
 			commands::market::market_detail,
 			commands::market::market_refresh,
 			commands::market::market_install,
+			commands::portability::export_bundle,
 		])
 		.run(tauri::generate_context!())
 		.expect("运行 Tauri 应用失败");

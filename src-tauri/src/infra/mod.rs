@@ -10,6 +10,7 @@ pub mod repo_auth;
 pub mod repo_impexp;
 pub mod repo_market;
 pub mod repo_resource;
+pub mod repo_setting;
 pub mod repo_sync;
 pub mod source;
 pub mod store;
