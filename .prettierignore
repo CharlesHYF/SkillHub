@@ -1,0 +1,11 @@
+node_modules/
+dist/
+target/
+src-tauri/gen/
+src-tauri/target/
+.superpowers/
+prototype/
+docs/
+pnpm-lock.yaml
+Cargo.lock
+**/*.md

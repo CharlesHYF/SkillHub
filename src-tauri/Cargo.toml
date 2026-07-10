@@ -1,0 +1,59 @@
+[package]
+name = "skillhub"
+version = "0.1.0"
+description = "SkillHub - 统一管理并同步本机 AI 工具的 Skill 与 MCP"
+authors = ["Charles"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "skillhub_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+# tauri-plugin-dialog: 原生保存/打开/目录对话框, 供前端导入导出与设置屏"浏览"按钮调用
+# (@tauri-apps/plugin-dialog, 见 M4 Task 4), 后端侧仅需注册插件 + 声明 capabilities 权限
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+anyhow = "1"
+dirs = "6"
+toml = "1"
+# rustls-tls: 走纯 Rust TLS 实现(webpki 根证书), 不依赖系统 openssl
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+keyring = "4"
+# async_trait: 让 SourceProvider(infra::source)的 async fn 方法保持 dyn 对象安全,
+# 原生 async fn in trait 不支持 dyn 分派(见 infra/source/mod.rs 文件头注释)
+async-trait = "0.1"
+# base64: 解码 GitHub contents API 返回的 base64 文件内容(infra::source::github_skills);
+# 也用于 PKCE code_verifier/code_challenge 的 base64url 编码(services::auth)
+base64 = "0.22"
+# sha2: PKCE(RFC 7636)S256 方法计算 code_challenge(services::auth::build_pkce)
+sha2 = "0.10"
+# rand: PKCE code_verifier 所需的密码学安全随机字节(services::auth::build_pkce)
+rand = "0.10"
+# futures: join_all 并发聚合市场三源的 search 调用(services::market::refresh); 已由 reqwest/
+# tauri 的传递依赖间接锁定 0.3.32, 此处提升为直接依赖以便在自身代码里 use
+futures = "0.3"
+# zip/tar+flate2: 导出打包(services::portability::export_bundle)分别支持 Zip/Tar.gz 两种归档
+# 格式; zip 关闭默认特性只留 deflate(不需要 aes 加密/zstd/bzip2/时间戳相关等额外能力), tar 只管
+# 归档结构本身, 压缩交给 flate2(GzEncoder)包一层, 与 Tar.gz 的常规组合方式一致
+zip = { version = "8", default-features = false, features = ["deflate"] }
+tar = "0.4"
+flate2 = "1"
+
+[dev-dependencies]
+tempfile = "3"
+wiremock = "0.6"
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+

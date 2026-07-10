@@ -1,0 +1,16 @@
+// 文件作用: 基础设施层模块聚合
+// 创建日期: 2026-07-09
+pub mod adapter;
+pub mod http;
+pub mod keychain;
+pub mod repo_activity;
+pub mod repo_agent;
+pub mod repo_assoc;
+pub mod repo_auth;
+pub mod repo_impexp;
+pub mod repo_market;
+pub mod repo_resource;
+pub mod repo_setting;
+pub mod repo_sync;
+pub mod source;
+pub mod store;

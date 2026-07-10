@@ -1,0 +1,390 @@
+// 文件作用: resource_agent 关联表仓储 —— 期望态(desired) upsert 与双向查询,
+//           应用指纹(applied_hash)/同步状态(sync_status)维护, 显式列名/禁 SELECT */
+//           全参数化查询(阿里巴巴泰山版数据库规约); managed_keys_for_agent 供
+//           services::sync::diff_for_agent(Task 7c)构造 domain::sync::reconcile 的
+//           managed 安全边界参数
+// 创建日期: 2026-07-09
+
+use std::collections::BTreeSet;
+
+use rusqlite::{params, Connection};
+use serde::Serialize;
+
+use crate::domain::resource::ResourceType;
+
+/// 期望态 upsert: 按 (resource_id, agent_id) 唯一键(uk_resource_agent_rid_aid)插入或冲突更新,
+/// 冲突时仅覆盖 desired/update_time(applied_hash/sync_status 由各自专用方法维护, 此处不动),
+/// 返回该行主键 id(无论本次是插入还是更新)
+pub fn set(
+	conn: &Connection,
+	resource_id: i64,
+	agent_id: i64,
+	desired: bool,
+) -> rusqlite::Result<i64> {
+	conn.execute(
+		"INSERT INTO resource_agent (resource_id, agent_id, desired) \
+		 VALUES (?1, ?2, ?3) \
+		 ON CONFLICT(resource_id, agent_id) DO UPDATE SET \
+		 desired = excluded.desired, update_time = datetime('now')",
+		params![resource_id, agent_id, desired],
+	)?;
+	conn.query_row(
+		"SELECT id FROM resource_agent WHERE resource_id = ?1 AND agent_id = ?2",
+		params![resource_id, agent_id],
+		|row| row.get(0),
+	)
+}
+
+/// 查询某 Agent 期望装(desired=1)的资源 id 列表, 按 resource_id 升序
+pub fn desired_for_agent(conn: &Connection, agent_id: i64) -> rusqlite::Result<Vec<i64>> {
+	let mut stmt = conn.prepare(
+		"SELECT resource_id FROM resource_agent \
+		 WHERE agent_id = ?1 AND desired = 1 \
+		 ORDER BY resource_id",
+	)?;
+	let rows = stmt.query_map(params![agent_id], |row| row.get(0))?;
+	rows.collect()
+}
+
+/// 查询期望装某资源(desired=1)的 Agent id 列表, 按 agent_id 升序;
+/// 与 desired_for_agent 互为镜像查询, 同样只看"期望存在"的关联边
+pub fn agents_for_resource(conn: &Connection, resource_id: i64) -> rusqlite::Result<Vec<i64>> {
+	let mut stmt = conn.prepare(
+		"SELECT agent_id FROM resource_agent \
+		 WHERE resource_id = ?1 AND desired = 1 \
+		 ORDER BY agent_id",
+	)?;
+	let rows = stmt.query_map(params![resource_id], |row| row.get(0))?;
+	rows.collect()
+}
+
+/// 记录一次成功应用后的内容指纹(供漂移检测), 按 (resource_id, agent_id) 定位, 返回受影响行数
+pub fn set_applied_hash(
+	conn: &Connection,
+	resource_id: i64,
+	agent_id: i64,
+	hash: &str,
+) -> rusqlite::Result<usize> {
+	conn.execute(
+		"UPDATE resource_agent SET applied_hash = ?1, update_time = datetime('now') \
+		 WHERE resource_id = ?2 AND agent_id = ?3",
+		params![hash, resource_id, agent_id],
+	)
+}
+
+/// 更新同步状态(0-待同步,1-已同步,2-本地修改,3-同步失败,4-已禁用),
+/// 按 (resource_id, agent_id) 定位, 返回受影响行数
+pub fn set_sync_status(
+	conn: &Connection,
+	resource_id: i64,
+	agent_id: i64,
+	status: i64,
+) -> rusqlite::Result<usize> {
+	conn.execute(
+		"UPDATE resource_agent SET sync_status = ?1, update_time = datetime('now') \
+		 WHERE resource_id = ?2 AND agent_id = ?3",
+		params![status, resource_id, agent_id],
+	)
+}
+
+/// 统计期望装(desired=1)某资源的 Agent 数, 供"已安装"界面显示; 用 COUNT(id) 保持列名显式
+pub fn count_agents_for_resource(conn: &Connection, resource_id: i64) -> rusqlite::Result<i64> {
+	conn.query_row(
+		"SELECT COUNT(id) FROM resource_agent WHERE resource_id = ?1 AND desired = 1",
+		params![resource_id],
+		|row| row.get(0),
+	)
+}
+
+/// 资源-Agent 关联的展示行(仅取期望态 desired=1), 附带 Agent 展示名(JOIN agent 表); 供"已安装"
+/// 界面一次性取全部资源的关联关系, 用于表格"已关联 Agent 数"列与详情面板"已关联 Agent"列表,
+/// 避免逐资源 N+1 查询(命令层见 commands::sync::resource_agent_links)
+#[derive(Serialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceAgentLink {
+	pub resource_id: i64,
+	pub agent_id: i64,
+	pub agent_name: String,
+}
+
+/// 一次性查询全部资源的关联 Agent(仅 desired=1), 按 resource_id, agent_id 升序; 调用方按需
+/// 用 resource_id 分组统计数量, 或按选中的 resource_id 过滤取展示列表
+pub fn list_all_links(conn: &Connection) -> rusqlite::Result<Vec<ResourceAgentLink>> {
+	let mut stmt = conn.prepare(
+		"SELECT ra.resource_id, a.id, a.name \
+		 FROM resource_agent ra \
+		 JOIN agent a ON a.id = ra.agent_id \
+		 WHERE ra.desired = 1 \
+		 ORDER BY ra.resource_id, a.id",
+	)?;
+	let rows = stmt.query_map([], |row| {
+		Ok(ResourceAgentLink {
+			resource_id: row.get(0)?,
+			agent_id: row.get(1)?,
+			agent_name: row.get(2)?,
+		})
+	})?;
+	rows.collect()
+}
+
+/// 统计全部处于"待同步"(sync_status=0)的资源-Agent 关联行数, 供 Task 8 首页统计卡片
+/// (services::dashboard::summary 的 pending_count)取用的一个简单可算口径: 只看数据库里已记录
+/// 的同步状态, 不逐 Agent 现读配置文件跑一遍 reconcile(那需要 home 家目录与逐 Agent 文件 IO,
+/// 首页汇总只要一个量级参考值, 精确差异请走 sync_diff 逐 Agent 现算)。不区分 desired 取值,
+/// 与 managed_keys_for_agent 同样的理由: 该列只反映"上次是否成功同步过", 与当前还想不想要它
+/// 是两件事, 但这里只是首页参考值, 不追求语义上的绝对精确
+pub fn count_pending(conn: &Connection) -> rusqlite::Result<i64> {
+	conn.query_row(
+		"SELECT COUNT(id) FROM resource_agent WHERE sync_status = 0",
+		[],
+		|row| row.get(0),
+	)
+}
+
+/// 查询某 Agent 在 resource_agent 里"曾经登记过"的资源集合, 转为 (ResourceType, name) 对;
+/// 不按 desired 过滤(即便当前 desired=0, 只要行还在就算数), 因为这里回答的是"SkillHub 是否
+/// 曾经在这台 Agent 上落地过这个资源", 而不是"现在还想不想要它"——这正是
+/// domain::sync::reconcile 的 managed 参数所需的安全边界语义(只有出现在这个集合里的实际项,
+/// 才可能在期望态里不再提及时被判定为 Remove; 见该函数文档)。JOIN resource 取 res_type/name,
+/// 若 resource 行已被删除(应用层从未设外键约束)则该行不会出现在结果里, 是已知的边界情况
+pub fn managed_keys_for_agent(
+	conn: &Connection,
+	agent_id: i64,
+) -> rusqlite::Result<BTreeSet<(ResourceType, String)>> {
+	let mut stmt = conn.prepare(
+		"SELECT r.res_type, r.name \
+		 FROM resource_agent ra \
+		 JOIN resource r ON r.id = ra.resource_id \
+		 WHERE ra.agent_id = ?1",
+	)?;
+	let rows = stmt.query_map(params![agent_id], |row| {
+		let res_type: i64 = row.get(0)?;
+		let name: String = row.get(1)?;
+		Ok((ResourceType::from_i64(res_type), name))
+	})?;
+	rows.collect()
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	/// 建一个已迁移好 10 张表结构的内存库, 供仓储测试复用(migrate 为 pub(crate), 见 infra::store)
+	fn setup_conn() -> Connection {
+		let mut conn = Connection::open_in_memory().unwrap();
+		crate::infra::store::migrate(&mut conn).unwrap();
+		conn
+	}
+
+	/// 直接查询 applied_hash/sync_status 两列, 供测试校验落库结果
+	/// (这两列均无对应的公开 getter, 属于白盒校验, 不暴露为仓储 API)
+	fn fetch_hash_and_status(conn: &Connection, resource_id: i64, agent_id: i64) -> (String, i64) {
+		conn.query_row(
+			"SELECT applied_hash, sync_status FROM resource_agent \
+			 WHERE resource_id = ?1 AND agent_id = ?2",
+			params![resource_id, agent_id],
+			|row| Ok((row.get(0)?, row.get(1)?)),
+		)
+		.unwrap()
+	}
+
+	// set(desired=true) 后应能在 desired_for_agent 与 agents_for_resource 两个方向都查到
+	#[test]
+	fn set_desired_true_is_visible_from_both_directions() {
+		let conn = setup_conn();
+		set(&conn, 10, 20, true).unwrap();
+
+		assert_eq!(desired_for_agent(&conn, 20).unwrap(), vec![10]);
+		assert_eq!(agents_for_resource(&conn, 10).unwrap(), vec![20]);
+	}
+
+	// set 应幂等 upsert: 同 (resource_id, agent_id) 二次调用命中同一行, 用第二次的 desired 覆盖第一次
+	#[test]
+	fn set_same_pair_twice_is_idempotent_and_overwrites_desired() {
+		let conn = setup_conn();
+		let id1 = set(&conn, 10, 20, true).unwrap();
+		let id2 = set(&conn, 10, 20, false).unwrap();
+
+		assert_eq!(id1, id2, "同一 (resource_id, agent_id) 应命中同一行");
+		assert_eq!(desired_for_agent(&conn, 20).unwrap(), Vec::<i64>::new());
+		assert_eq!(agents_for_resource(&conn, 10).unwrap(), Vec::<i64>::new());
+
+		let total: i64 = conn
+			.query_row("SELECT COUNT(id) FROM resource_agent", [], |row| row.get(0))
+			.unwrap();
+		assert_eq!(total, 1, "重复 set 不应产生多行");
+	}
+
+	// desired_for_agent 应只返回 desired=1 的行, 按 resource_id 升序
+	#[test]
+	fn desired_for_agent_filters_non_desired_and_orders_ascending() {
+		let conn = setup_conn();
+		set(&conn, 30, 1, true).unwrap();
+		set(&conn, 10, 1, true).unwrap();
+		set(&conn, 20, 1, false).unwrap();
+
+		assert_eq!(desired_for_agent(&conn, 1).unwrap(), vec![10, 30]);
+	}
+
+	// set_applied_hash/set_sync_status 应分别精确更新对应列, 不影响 desired
+	#[test]
+	fn set_applied_hash_and_sync_status_update_their_own_columns() {
+		let conn = setup_conn();
+		set(&conn, 10, 20, true).unwrap();
+
+		let affected_hash = set_applied_hash(&conn, 10, 20, "sha256:abc").unwrap();
+		let affected_status = set_sync_status(&conn, 10, 20, 3).unwrap();
+		assert_eq!(affected_hash, 1);
+		assert_eq!(affected_status, 1);
+
+		let (hash, status) = fetch_hash_and_status(&conn, 10, 20);
+		assert_eq!(hash, "sha256:abc");
+		assert_eq!(status, 3, "3-同步失败");
+		assert_eq!(
+			desired_for_agent(&conn, 20).unwrap(),
+			vec![10],
+			"不应影响 desired"
+		);
+	}
+
+	// count_agents_for_resource 应只统计 desired=1 的关联行
+	#[test]
+	fn count_agents_for_resource_counts_only_desired_rows() {
+		let conn = setup_conn();
+		set(&conn, 100, 1, true).unwrap();
+		set(&conn, 100, 2, true).unwrap();
+		set(&conn, 100, 3, false).unwrap();
+
+		assert_eq!(count_agents_for_resource(&conn, 100).unwrap(), 2);
+	}
+
+	/// 插入一条最小资源, 返回其 resource_id; 供 managed_keys_for_agent 系列测试构造真实可
+	/// JOIN 的 resource 行(与 set/desired_for_agent 等测试里直接使用虚构整数 id 不同,
+	/// managed_keys_for_agent 需要 JOIN resource 表取 res_type/name, 必须有真实行)
+	fn seed_resource(conn: &Connection, res_type: ResourceType, name: &str) -> i64 {
+		crate::infra::repo_resource::insert(
+			conn,
+			&crate::infra::repo_resource::NewResource {
+				res_type,
+				name: name.to_string(),
+				display_name: name.to_string(),
+				version: "1.0.0".to_string(),
+				source_type: crate::domain::resource::SourceType::LocalImport,
+				local_path: "/tmp/unused".to_string(),
+				enabled: true,
+			},
+		)
+		.unwrap()
+	}
+
+	// managed_keys_for_agent 应返回该 Agent 在 resource_agent 里全部登记过的 (res_type,name),
+	// 不论 desired 取值 —— 即便某条已被取消期望(desired 由 true 改回 false), 只要行还在,
+	// 仍应出现在结果里(呼应"managed 是曾经托管过的凭证, 与当前是否还想要它无关"的语义)
+	#[test]
+	fn managed_keys_for_agent_includes_rows_regardless_of_desired() {
+		let conn = setup_conn();
+		let skill_id = seed_resource(&conn, ResourceType::Skill, "demo-skill");
+		let mcp_id = seed_resource(&conn, ResourceType::Mcp, "demo-mcp");
+
+		set(&conn, skill_id, 1, true).unwrap();
+		set(&conn, mcp_id, 1, true).unwrap();
+		set(&conn, mcp_id, 1, false).unwrap(); // 取消期望, 但行仍在, 仍算"曾登记过"
+
+		let managed = managed_keys_for_agent(&conn, 1).unwrap();
+
+		assert_eq!(managed.len(), 2);
+		assert!(managed.contains(&(ResourceType::Skill, "demo-skill".to_string())));
+		assert!(managed.contains(&(ResourceType::Mcp, "demo-mcp".to_string())));
+	}
+
+	/// 插入一条最小 Agent, 返回其 agent_id; 供 list_all_links 系列测试构造真实可 JOIN 的
+	/// agent 行(config_path 按 name 区分, 避免撞 uk_agent_kind_path 唯一键)
+	fn seed_agent(conn: &Connection, name: &str) -> i64 {
+		crate::infra::repo_agent::upsert(
+			conn,
+			&crate::domain::agent::DetectedAgent {
+				kind: crate::domain::agent::AgentKind::ClaudeCode,
+				name: name.to_string(),
+				config_path: format!("/tmp/{name}.json"),
+				scope: crate::domain::agent::AgentScope::Global,
+				online: true,
+			},
+		)
+		.unwrap()
+	}
+
+	// list_all_links: 应 JOIN 出 Agent 展示名, 只取 desired=1 的关联行, 可按 resource_id 分组
+	#[test]
+	fn list_all_links_joins_agent_name_and_filters_desired() {
+		let conn = setup_conn();
+		let skill_id = seed_resource(&conn, ResourceType::Skill, "demo-skill");
+		let mcp_id = seed_resource(&conn, ResourceType::Mcp, "demo-mcp");
+		let agent_a = seed_agent(&conn, "Agent Alpha");
+		let agent_b = seed_agent(&conn, "Agent Beta");
+
+		set(&conn, skill_id, agent_a, true).unwrap();
+		set(&conn, skill_id, agent_b, true).unwrap();
+		set(&conn, mcp_id, agent_a, true).unwrap();
+		set(&conn, mcp_id, agent_b, false).unwrap(); // 未期望, 不应出现
+
+		let links = list_all_links(&conn).unwrap();
+
+		assert_eq!(
+			links.len(),
+			3,
+			"skill 两条 + mcp 一条, mcp/agent_b 未期望不计入"
+		);
+		let skill_links: Vec<_> = links.iter().filter(|l| l.resource_id == skill_id).collect();
+		assert_eq!(skill_links.len(), 2);
+		assert!(skill_links.iter().any(|l| l.agent_name == "Agent Alpha"));
+		assert!(skill_links.iter().any(|l| l.agent_name == "Agent Beta"));
+		let mcp_links: Vec<_> = links.iter().filter(|l| l.resource_id == mcp_id).collect();
+		assert_eq!(mcp_links.len(), 1);
+		assert_eq!(mcp_links[0].agent_id, agent_a);
+		assert_eq!(mcp_links[0].agent_name, "Agent Alpha");
+	}
+
+	// list_all_links: 没有任何关联行时应返回空, 不报错
+	#[test]
+	fn list_all_links_returns_empty_when_no_associations() {
+		let conn = setup_conn();
+		assert!(list_all_links(&conn).unwrap().is_empty());
+	}
+
+	// managed_keys_for_agent 应只统计给定 agent_id 的登记, 不与其它 Agent 的登记混淆
+	#[test]
+	fn managed_keys_for_agent_does_not_leak_across_agents() {
+		let conn = setup_conn();
+		let resource_id = seed_resource(&conn, ResourceType::Skill, "demo-skill");
+		set(&conn, resource_id, 1, true).unwrap();
+
+		assert!(managed_keys_for_agent(&conn, 2).unwrap().is_empty());
+	}
+
+	// managed_keys_for_agent 在该 Agent 从未登记过任何资源时应返回空集合, 不报错
+	#[test]
+	fn managed_keys_for_agent_returns_empty_when_agent_has_no_rows() {
+		let conn = setup_conn();
+		assert!(managed_keys_for_agent(&conn, 999).unwrap().is_empty());
+	}
+
+	// count_pending 应只统计 sync_status=0(待同步)的行, 不论 desired 取值, 也不受其它
+	// sync_status(已同步/本地修改/同步失败/已禁用)行干扰
+	#[test]
+	fn count_pending_counts_only_sync_status_zero_rows() {
+		let conn = setup_conn();
+		set(&conn, 1, 1, true).unwrap(); // sync_status 默认 0-待同步
+		set(&conn, 2, 1, true).unwrap();
+		set_sync_status(&conn, 2, 1, 1).unwrap(); // 已同步, 不应计入
+		set(&conn, 3, 1, false).unwrap(); // desired=false 但 sync_status 仍是默认 0, 仍应计入
+
+		assert_eq!(count_pending(&conn).unwrap(), 2);
+	}
+
+	// count_pending 在没有任何关联行时应返回 0, 不报错
+	#[test]
+	fn count_pending_returns_zero_when_no_rows() {
+		let conn = setup_conn();
+		assert_eq!(count_pending(&conn).unwrap(), 0);
+	}
+}

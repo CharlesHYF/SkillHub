@@ -1,0 +1,4 @@
+# 文件作用: rustfmt 配置, 用硬 Tab 落地 charles-coding 的 Tab 缩进约定
+# 创建日期: 2026-07-09
+hard_tabs = true
+edition = "2021"
