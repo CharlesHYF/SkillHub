@@ -50,6 +50,7 @@ pub fn run() {
 			commands::health::app_health,
 			commands::auth::auth_accounts,
 			commands::auth::auth_enter_token,
+			commands::auth::auth_login,
 			commands::auth::auth_logout,
 			commands::library::library_list,
 			commands::library::library_get,

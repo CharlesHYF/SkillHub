@@ -1,11 +1,17 @@
 // 文件作用: 认证服务 —— PKCE(RFC 7636)挑战构造与 GitHub/Google/Microsoft 授权 URL 拼接、
 //           换取/校验令牌(exchange_code/validate_pat, 端点 base 可注入以便 wiremock 测试)、
 //           已连接账号入库 + 令牌入系统钥匙串(store)、断开连接(logout)、供后端内部取当前令牌
-//           (token_for, 刻意不做成命令/不经 IPC 暴露, 见其文档)。应用内 OAuth 弹窗(WebView +
-//           本地 loopback 回调捕获 code/state)留待 Task 8, 本文件只含其前置的纯服务逻辑
+//           (token_for, 刻意不做成命令/不经 IPC 暴露, 见其文档)、应用内 OAuth 弹窗登录所需的
+//           纯 loopback 逻辑(random_state/build_redirect_uri/parse_callback/wait_for_callback:
+//           防 CSRF 的随机 state、redirect_uri 构造、请求行/URL 解析+校验、阻塞等待恰好一次
+//           回调, 均不依赖 Tauri, 可脱离 WebView 直接单测)。真正打开 WebviewWindow 承载授权页
+//           那部分 Tauri 专属编排逻辑在 commands::auth::auth_login, 不下沉本文件
 // 创建日期: 2026-07-10
 
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use base64::prelude::*;
@@ -215,6 +221,127 @@ fn unix_expiry(expires_in_secs: u64) -> String {
 		.unwrap_or_default()
 		.as_secs();
 	(now + expires_in_secs).to_string()
+}
+
+// ---------- OAuth 弹窗登录: 本地 loopback 回调捕获 ----------
+
+/// 授权回调等待的最长时长: 超过后视为用户已放弃本次登录, 优雅报错而不是无限期挂起等待
+pub const LOGIN_TIMEOUT: Duration = Duration::from_secs(180);
+
+/// 轮询 accept 的重试间隔: 100ms 足够及时响应超时/取消, 又不会空转占用过多 CPU
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+/// 单次读取回调请求行的缓冲区大小: 请求行(如 "GET /callback?code=...&state=... HTTP/1.1")里
+/// code/state 均为几十到上百字符的 token, 通常远小于此值, 留有充分余量
+const REQUEST_BUFFER_BYTES: usize = 2048;
+
+/// 回调连接的响应体: 极简 200, 告知用户可关闭本窗口; 不引入模板引擎, 固定文案足矣
+const CALLBACK_RESPONSE: &str = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<html><body><p>登录已完成, 可关闭此窗口。</p></body></html>";
+
+/// 生成 OAuth "state" 参数用的随机值: 与 PKCE verifier 同规格(32 字节随机数, base64url 无
+/// padding 编码), 但语义完全独立 —— state 只用于让发起授权与接收回调两端比对一致, 防御 CSRF/
+/// 回调伪造, 不参与 code_verifier/code_challenge 运算, 不应与 PKCE verifier 混用同一份随机数
+pub fn random_state() -> String {
+	let mut bytes = [0u8; VERIFIER_RANDOM_BYTES];
+	rand::rng().fill(&mut bytes);
+	BASE64_URL_SAFE_NO_PAD.encode(bytes)
+}
+
+/// 拼出本机 loopback 回调地址: 固定用 127.0.0.1(不用 "localhost", 避免依赖系统 hosts/DNS 解析
+/// 的不确定性)+ 实际监听到的随机端口 + 固定路径 "/callback"
+pub fn build_redirect_uri(port: u16) -> String {
+	format!("http://127.0.0.1:{port}/callback")
+}
+
+/// 从 loopback 收到的一行 HTTP 请求行(如 "GET /callback?code=X&state=Y HTTP/1.1"), 或一个完整
+/// 重定向 URL(如 "http://127.0.0.1:9999/callback?code=X&state=Y")中取出 code, 并就地校验 state
+/// 与发起授权时生成的 expected_state 一致。两种输入形式共用同一套逻辑: 先定位首个 '?', 再在其后
+/// 截到首个空白处(请求行结尾还有 " HTTP/1.1" 协议版本尾巴; URL 没有这条尾巴, 天然在字符串末尾
+/// 截止)。state 缺失或不匹配一律报错拒绝(不区分是被篡改还是重放, 统一按 CSRF 处理), 这一校验
+/// 故意做成 parse_callback 自身职责的一部分而非留给调用方另行判断: 调用方不可能在不提供
+/// expected_state 的情况下拿到 code, 结构上杜绝"忘记校验 state"的误用
+pub fn parse_callback(request_line_or_url: &str, expected_state: &str) -> Result<String> {
+	let query = request_line_or_url
+		.split_once('?')
+		.map(|(_, rest)| rest)
+		.unwrap_or("");
+	let query = query.split_whitespace().next().unwrap_or("");
+
+	// 借 Url::query_pairs 完成 '&' 切分 + percent-decode(不手写, 避免遗漏 "+"/"%XX" 等边角情况);
+	// 拼一个占位 scheme+host 只为满足 Url::parse 必须是合法绝对 URL 的要求, 不会发起任何网络访问
+	let dummy = format!("http://127.0.0.1/?{query}");
+	let parsed = Url::parse(&dummy).context("回调查询串解析失败")?;
+
+	let mut code = None;
+	let mut state = None;
+	for (key, value) in parsed.query_pairs() {
+		match key.as_ref() {
+			"code" => code = Some(value.into_owned()),
+			"state" => state = Some(value.into_owned()),
+			_ => {}
+		}
+	}
+
+	let state = state.ok_or_else(|| anyhow::anyhow!("回调缺少 state 参数"))?;
+	if state != expected_state {
+		anyhow::bail!("state 与发起时不一致, 已拒绝该回调(可能是 CSRF 或链接已过期)");
+	}
+	code.ok_or_else(|| anyhow::anyhow!("回调缺少 code 参数"))
+}
+
+/// 阻塞等待 loopback 监听口上恰好一次授权回调: 轮询 accept(非阻塞), 直至(a)收到连接并读到
+/// 请求行、(b)超过 timeout, 或(c)cancelled 被置位(用户关闭了登录窗口)。命中(a)时无论解析
+/// 成败都会先回一段 CALLBACK_RESPONSE, 让用户的浏览器/WebView 不再停留在转圈状态;(b)/(c)路径
+/// 下压根没有连接可回应。本函数只做阻塞轮询, 调用方应在专用线程(如
+/// tauri::async_runtime::spawn_blocking)上调用, 不要在异步任务里直接调用(会占住执行器线程)
+pub fn wait_for_callback(
+	listener: TcpListener,
+	expected_state: &str,
+	timeout: Duration,
+	cancelled: &AtomicBool,
+) -> Result<String> {
+	listener
+		.set_nonblocking(true)
+		.context("loopback 监听设置非阻塞模式失败")?;
+	let deadline = Instant::now() + timeout;
+
+	loop {
+		if cancelled.load(Ordering::SeqCst) {
+			anyhow::bail!("登录窗口已被关闭, 已取消本次登录");
+		}
+		if Instant::now() >= deadline {
+			anyhow::bail!("等待授权回调超时, 请重试");
+		}
+
+		match listener.accept() {
+			Ok((stream, _addr)) => return handle_callback_connection(stream, expected_state),
+			Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+				std::thread::sleep(POLL_INTERVAL);
+			}
+			Err(e) => return Err(e).context("接受 loopback 连接失败"),
+		}
+	}
+}
+
+/// 处理已接受的一条 loopback 连接: 读取其请求行、解析+校验 code/state, 无论成败都回一段极简
+/// 200 响应, 最终把解析结果透传给调用方
+fn handle_callback_connection(mut stream: TcpStream, expected_state: &str) -> Result<String> {
+	// 5 秒读超时: 正常回调会在建连后立即发送请求行, 超过此值大概率是异常连接(如端口探测), 不应
+	// 无限期占住这唯一一次 accept 机会
+	stream
+		.set_read_timeout(Some(Duration::from_secs(5)))
+		.context("设置回调连接读超时失败")?;
+
+	let mut buf = [0u8; REQUEST_BUFFER_BYTES];
+	let n = stream.read(&mut buf).context("读取回调请求失败")?;
+	let request = String::from_utf8_lossy(&buf[..n]);
+	let request_line = request.lines().next().unwrap_or("");
+	let result = parse_callback(request_line, expected_state);
+
+	let _ = stream.write_all(CALLBACK_RESPONSE.as_bytes());
+	let _ = stream.flush();
+
+	result
 }
 
 // ---------- validate_pat ----------
@@ -538,6 +665,175 @@ mod tests {
 	#[test]
 	fn authorize_url_returns_empty_string_for_token_provider() {
 		assert_eq!(authorize_url(ProviderKind::Token, "c", "r", "s"), "");
+	}
+
+	// ---------- random_state / build_redirect_uri / parse_callback / wait_for_callback ----------
+
+	// random_state: 应与 build_pkce verifier 同规格(同一随机源实现, 长度区间借用 RFC 7636 只是
+	// 恰好一致, state 本身不受该 RFC 约束), 且字符集只含 base64url
+	#[test]
+	fn random_state_has_expected_length_and_charset() {
+		let state = random_state();
+		assert!(
+			(43..=128).contains(&state.len()),
+			"state 长度应在 43-128 之间, 实际 {}",
+			state.len()
+		);
+		assert!(
+			state
+				.chars()
+				.all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+			"state 应只含 base64url 字符集: {}",
+			state
+		);
+	}
+
+	// random_state: 两次调用应产出不同值(基本随机性检查)
+	#[test]
+	fn random_state_generates_different_value_each_call() {
+		assert_ne!(random_state(), random_state());
+	}
+
+	// build_redirect_uri: 应固定用 127.0.0.1 + 给定端口 + /callback 路径
+	#[test]
+	fn build_redirect_uri_formats_loopback_url_with_given_port() {
+		assert_eq!(build_redirect_uri(54321), "http://127.0.0.1:54321/callback");
+	}
+
+	// parse_callback: 正常请求行(state 匹配)应取出 code
+	#[test]
+	fn parse_callback_extracts_code_from_request_line() {
+		let code = parse_callback("GET /callback?code=abc123&state=st-1 HTTP/1.1", "st-1").unwrap();
+		assert_eq!(code, "abc123");
+	}
+
+	// parse_callback: 也应支持直接传入完整重定向 URL(而非请求行), 函数名 request_line_or_url
+	// 即表明两种输入形式都要支持
+	#[test]
+	fn parse_callback_extracts_code_from_full_url() {
+		let code = parse_callback(
+			"http://127.0.0.1:9999/callback?code=xyz789&state=st-2",
+			"st-2",
+		)
+		.unwrap();
+		assert_eq!(code, "xyz789");
+	}
+
+	// parse_callback: 缺 code 应报错
+	#[test]
+	fn parse_callback_returns_err_when_code_missing() {
+		let err = parse_callback("GET /callback?state=st-3 HTTP/1.1", "st-3").unwrap_err();
+		assert!(err.to_string().contains("code"));
+	}
+
+	// parse_callback: state 缺失应报错(与"不符"同归为拒绝, 不单独放行)
+	#[test]
+	fn parse_callback_returns_err_when_state_missing() {
+		let err = parse_callback("GET /callback?code=abc HTTP/1.1", "expected").unwrap_err();
+		assert!(err.to_string().contains("state"));
+	}
+
+	// parse_callback: state 与期望值不符应报错(核心防 CSRF 场景)
+	#[test]
+	fn parse_callback_returns_err_when_state_mismatches() {
+		let err =
+			parse_callback("GET /callback?code=abc&state=wrong HTTP/1.1", "expected").unwrap_err();
+		assert!(err.to_string().contains("state"));
+	}
+
+	// wait_for_callback: 真实建立一次 TCP 连接发送合法回调, 应返回 Ok(code), 且客户端应收到
+	// 200 响应(不能让浏览器/WebView 停在转圈状态)
+	#[test]
+	fn wait_for_callback_returns_code_on_valid_connection() {
+		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+		let port = listener.local_addr().unwrap().port();
+		let cancelled = AtomicBool::new(false);
+
+		let client = std::thread::spawn(move || {
+			let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+			stream
+				.write_all(b"GET /callback?code=real-code&state=real-state HTTP/1.1\r\n\r\n")
+				.unwrap();
+			let mut response = String::new();
+			stream.read_to_string(&mut response).unwrap();
+			response
+		});
+
+		let result = wait_for_callback(listener, "real-state", Duration::from_secs(5), &cancelled);
+		let response = client.join().unwrap();
+
+		assert_eq!(result.unwrap(), "real-code");
+		assert!(
+			response.starts_with("HTTP/1.1 200"),
+			"应回 200 响应: {response}"
+		);
+	}
+
+	// wait_for_callback: 无连接到达且超过 timeout, 应超时报错而非无限期挂起
+	#[test]
+	fn wait_for_callback_times_out_when_no_connection_arrives() {
+		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+		let cancelled = AtomicBool::new(false);
+
+		let started = Instant::now();
+		let result = wait_for_callback(
+			listener,
+			"any-state",
+			Duration::from_millis(300),
+			&cancelled,
+		);
+		let elapsed = started.elapsed();
+
+		assert!(result.is_err());
+		assert!(
+			elapsed < Duration::from_secs(2),
+			"超时应接近设定值而非长期挂起, 实际耗时 {elapsed:?}"
+		);
+	}
+
+	// wait_for_callback: cancelled 标志被置位(模拟用户关闭登录窗口)应提前报错退出, 不等到超时
+	#[test]
+	fn wait_for_callback_stops_early_when_cancelled() {
+		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+		let cancelled = AtomicBool::new(true);
+
+		let started = Instant::now();
+		let result = wait_for_callback(listener, "any-state", Duration::from_secs(60), &cancelled);
+		let elapsed = started.elapsed();
+
+		assert!(result.is_err());
+		assert!(
+			elapsed < Duration::from_secs(1),
+			"取消应立即生效而非等待 60 秒超时, 实际耗时 {elapsed:?}"
+		);
+	}
+
+	// wait_for_callback: state 不符时也应先回 200 响应再报错(不能让浏览器停在转圈状态), 即便
+	// 这次登录最终会被判定失败
+	#[test]
+	fn wait_for_callback_still_responds_when_state_mismatches() {
+		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+		let port = listener.local_addr().unwrap().port();
+		let cancelled = AtomicBool::new(false);
+
+		let client = std::thread::spawn(move || {
+			let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+			stream
+				.write_all(b"GET /callback?code=c&state=wrong HTTP/1.1\r\n\r\n")
+				.unwrap();
+			let mut response = String::new();
+			stream.read_to_string(&mut response).unwrap();
+			response
+		});
+
+		let result = wait_for_callback(listener, "expected", Duration::from_secs(5), &cancelled);
+		let response = client.join().unwrap();
+
+		assert!(result.is_err());
+		assert!(
+			response.starts_with("HTTP/1.1 200"),
+			"即便失败也应回 200: {response}"
+		);
 	}
 
 	// ---------- exchange_code ----------
