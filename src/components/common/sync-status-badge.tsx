@@ -4,9 +4,11 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 
 /** 同步状态: 前 5 种与后端 resource_agent.sync_status(0-4)语义一一对应, 由调用方按需映射数字码;
- * 后 4 种(在线/离线/部分同步/同步失败)供 Sync Center 的 Agent 在线状态列复用(见
- * components/sync/agent-display.ts 的 deriveAgentSyncStatus), 两组状态语义不同但视觉表达一致,
- * 复用同一套徽标渲染逻辑, 不重复实现 */
+ * 中间 4 种(在线/离线/部分同步/同步失败)供 Sync Center 的 Agent 在线状态列复用(见
+ * components/sync/agent-display.ts 的 deriveAgentSyncStatus); 末 2 种(成功/部分成功)供导入导出
+ * (Portability)历史表的 ImpexpRow.status(0 失败/1 成功/2 部分成功)复用(见
+ * components/portability/impexp-display.ts), 三组状态语义不同但视觉表达一致, 复用同一套徽标
+ * 渲染逻辑, 不重复实现 */
 export type SyncStatus =
 	| '已同步'
 	| '待同步'
@@ -16,9 +18,11 @@ export type SyncStatus =
 	| '在线'
 	| '离线'
 	| '部分同步'
-	| '同步失败';
+	| '同步失败'
+	| '成功'
+	| '部分成功';
 
-/** 各状态对应的语义色: 已同步/在线=ok, 待同步/部分同步=warn, 失败/同步失败=danger;
+/** 各状态对应的语义色: 已同步/在线/成功=ok, 待同步/部分同步/部分成功=warn, 失败/同步失败=danger;
  * 本地修改/已禁用/离线为中性态, 不用状态色 */
 const STATUS_COLOR: Record<SyncStatus, string> = {
 	已同步: 'var(--sh-ok)',
@@ -30,6 +34,8 @@ const STATUS_COLOR: Record<SyncStatus, string> = {
 	部分同步: 'var(--sh-warn)',
 	同步失败: 'var(--sh-danger)',
 	离线: 'var(--sh-muted)',
+	成功: 'var(--sh-ok)',
+	部分成功: 'var(--sh-warn)',
 };
 
 interface SyncStatusBadgeProps {

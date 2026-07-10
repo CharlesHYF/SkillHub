@@ -17,6 +17,9 @@ describe('SyncStatusBadge', () => {
 		['部分同步', 'var(--sh-warn)'],
 		['同步失败', 'var(--sh-danger)'],
 		['离线', 'var(--sh-muted)'],
+		// 以下 2 种供导入导出历史表复用(见 components/portability/impexp-display.ts)
+		['成功', 'var(--sh-ok)'],
+		['部分成功', 'var(--sh-warn)'],
 	];
 
 	it.each(cases)('status=%s 应渲染对应文案且圆点用对应语义色', (status, expectedColor) => {
