@@ -20,6 +20,9 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+# tauri-plugin-dialog: 原生保存/打开/目录对话框, 供前端导入导出与设置屏"浏览"按钮调用
+# (@tauri-apps/plugin-dialog, 见 M4 Task 4), 后端侧仅需注册插件 + 声明 capabilities 权限
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }

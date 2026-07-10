@@ -10,7 +10,12 @@
 //           限流约束); market_install 则在阶段一(持锁查详情)内判定该来源是否需要认证(见
 //           needs_auth_required_error): 若来源要求认证且未连接对应账号、该资源又确实
 //           auth_required, 提前返回 "AUTH_REQUIRED:<Provider>" 特征错误串, 供前端据此弹出对应
-//           登录引导(不强行要求匿名可读的公开资源也必须先登录)
+//           登录引导(不强行要求匿名可读的公开资源也必须先登录)。M4 Task 2 起, 二者均额外在阶段一
+//           (持锁)内一并读出当前 Settings(services::setting::get_all), 待该锁作用域结束(块
+//           内变量析构、MutexGuard 随之释放)后再调用 infra::http::build_http_client(&settings)
+//           构造带用户配置的代理/超时的 reqwest::Client, 供阶段二网络 I/O 使用——Settings 本身是
+//           纯数据(无 MutexGuard), 跨 await 移动不受 Send 约束影响, 但客户端构造仍安排在锁释放
+//           之后, 保持"临界区内无 await、且不做任何非必要工作"的既有习惯
 // 创建日期: 2026-07-10
 
 use std::collections::BTreeMap;
@@ -21,9 +26,11 @@ use tauri::State;
 use crate::domain::auth::ProviderKind;
 use crate::domain::market::{MarketResource, Query, SortBy, SourceId};
 use crate::domain::resource::{Resource, ResourceType};
+use crate::infra::http;
 use crate::infra::source::{self, AuthKind};
 use crate::services::auth;
 use crate::services::market;
+use crate::services::setting;
 use crate::AppState;
 
 /// market_search 返回给前端的分页结果: items 为本页命中的市场资源, total 为该组过滤条件下的
@@ -83,20 +90,27 @@ pub fn market_detail(
 /// auth::token_for), 取出其令牌用于提升 GitHub 相关源(github_skills/github_mcp)的 API 限流
 /// 额度; 未连接账号时该值为 None, fetch_all 仍会照常对各源发起匿名请求(见其文档), 不强制要求
 /// 用户先登录才能刷新市场缓存。三段式调用与 market_install 同一 Send 安全惯例(阶段一持锁取
-/// token、阶段二不持锁发起网络 I/O、阶段三持锁落库, 临界区内均无 await), 详见文件头注释
+/// token/Settings、阶段二不持锁发起网络 I/O、阶段三持锁落库, 临界区内均无 await), 详见文件头
+/// 注释。发起网络请求所用的 reqwest::Client 依当前 Settings 的网络代理/超时字段现场构造(见
+/// infra::http::build_http_client), 使这些设置真实生效, 而非仅仅持久化
 #[tauri::command]
 pub async fn market_refresh(state: State<'_, AppState>) -> Result<MarketRefreshResult, String> {
 	let sources = source::all_sources();
 
-	// 阶段一(同步, 持锁): 若已连接 GitHub 账号则取出其令牌, 未连接时为 None(仍可正常刷新,
-	// 只是走匿名请求受公共限流约束)
-	let github_token = {
+	// 阶段一(同步, 持锁): 若已连接 GitHub 账号则取出其令牌(未连接时为 None, 仍可正常刷新,
+	// 只是走匿名请求受公共限流约束), 并一并读出当前 Settings; 块结束后 MutexGuard 立即析构
+	let (github_token, settings) = {
 		let conn = state.db();
-		auth::token_for(&conn, i64::from(ProviderKind::GitHub)).map_err(|e| e.to_string())?
+		let token =
+			auth::token_for(&conn, i64::from(ProviderKind::GitHub)).map_err(|e| e.to_string())?;
+		let settings = setting::get_all(&conn).map_err(|e| e.to_string())?;
+		(token, settings)
 	};
+	// 依 Settings 构造带代理/超时的 HTTP 客户端(纯本地状态机装配, 不含 await, 不影响 Send 判定)
+	let http_client = http::build_http_client(&settings).map_err(|e| e.to_string())?;
 
 	// 阶段二(异步, 不持锁): 并发拉取三源全量资源(不接触数据库), 详见文件头注释
-	let outcomes = market::fetch_all(&sources, github_token.as_deref()).await;
+	let outcomes = market::fetch_all(&sources, github_token.as_deref(), &http_client).await;
 
 	// 阶段三(同步, 持锁): 落库
 	let conn = state.db();
@@ -144,7 +158,9 @@ fn needs_auth_required_error(
 /// 不持锁, 与 market_refresh 同一 Send 安全惯例, 详见文件头注释) -> 落地入库
 /// (services::market::write_installed), 返回安装后的完整 Resource。envOverrides 供 McpTemplate
 /// 类资源安装时填充 required_env(纯 Skill/Mcp 资源通常不传或传空, 见 services::market::
-/// write_installed 文档); 已连接账号时会把令牌转发给 GitHub 类源用于提额/访问私有仓库
+/// write_installed 文档); 已连接账号时会把令牌转发给 GitHub 类源用于提额/访问私有仓库。发起
+/// 网络请求所用的 reqwest::Client 依当前 Settings 的网络代理/超时字段现场构造(见
+/// infra::http::build_http_client), 使这些设置真实生效, 而非仅仅持久化
 #[tauri::command]
 pub async fn market_install(
 	state: State<'_, AppState>,
@@ -159,8 +175,9 @@ pub async fn market_install(
 		.find(|item| item.id() == target_id)
 		.and_then(|item| item.auth_kind());
 
-	// 阶段一(同步, 持锁): 查详情 + 按需查已连接账号令牌 + 判定是否需要拦截认证, 不跨 await
-	let (detail, token) = {
+	// 阶段一(同步, 持锁): 查详情 + 按需查已连接账号令牌 + 当前 Settings + 判定是否需要拦截认证,
+	// 不跨 await; 块结束后 MutexGuard 立即析构
+	let (detail, token, settings) = {
 		let conn = state.db();
 		let detail = market::detail(&conn, source_type, &ext_id)
 			.map_err(|e| e.to_string())?
@@ -176,13 +193,22 @@ pub async fn market_install(
 			// unwrap: needs_auth_required_error 仅在 auth_kind 为 Some 时才可能返回 true
 			return Err(auth_required_error(auth_kind.unwrap()));
 		}
-		(detail, token)
+		let settings = setting::get_all(&conn).map_err(|e| e.to_string())?;
+		(detail, token, settings)
 	};
+	// 依 Settings 构造带代理/超时的 HTTP 客户端(纯本地状态机装配, 不含 await, 不影响 Send 判定)
+	let http_client = http::build_http_client(&settings).map_err(|e| e.to_string())?;
 
 	// 阶段二(异步, 不持锁): 网络拉取安装内容
-	let payload = market::fetch_install_payload(&sources, source_type, token.as_deref(), &detail)
-		.await
-		.map_err(|e| e.to_string())?;
+	let payload = market::fetch_install_payload(
+		&sources,
+		source_type,
+		token.as_deref(),
+		&detail,
+		&http_client,
+	)
+	.await
+	.map_err(|e| e.to_string())?;
 
 	// 阶段三(同步, 持锁): 落地写入 data_dir + 登记资源 + 记一条"下载"活动
 	let conn = state.db();

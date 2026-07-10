@@ -37,7 +37,6 @@ use serde_json::Value;
 use crate::domain::agent::McpServerDef;
 use crate::domain::market::{MarketResource, Query, SortBy, SourceId};
 use crate::domain::resource::{Resource, SourceType};
-use crate::infra::http::client;
 use crate::infra::repo_activity;
 use crate::infra::repo_market;
 use crate::infra::repo_resource::{self, NewResource};
@@ -65,12 +64,15 @@ fn full_catalog_query() -> Query {
 /// github_token 只转发给 auth_kind()==Some(GitHub) 的源(如 github_skills/github_mcp), 公开
 /// 只读源(如 mcp_registry)恒收到 None——即便传入的 github_token 非 None, 与这些源自身"恒发
 /// 匿名请求"的既有约定一致(见 infra::source::mcp_registry 文档), 不向不需要认证的公开接口
-/// 无意义地携带令牌
+/// 无意义地携带令牌。http_client 由调用方传入(生产用 commands::market::market_refresh 依当前
+/// Settings 现场构造的 infra::http::build_http_client 结果, 使代理/超时真正生效; 单测传入
+/// infra::http::client() 默认客户端即可), 本函数自身不再内部构造, 与 infra::source::mod
+/// "client 由调用方传入"的既有约定一致
 pub async fn fetch_all(
 	sources: &[Box<dyn SourceProvider>],
 	github_token: Option<&str>,
+	http_client: &reqwest::Client,
 ) -> Vec<Result<Vec<MarketResource>>> {
-	let http_client = client();
 	let query = full_catalog_query();
 
 	let searches = sources.iter().map(|source| {
@@ -78,7 +80,7 @@ pub async fn fetch_all(
 			Some(AuthKind::GitHub) => github_token,
 			_ => None,
 		};
-		source.search(&http_client, &query, token)
+		source.search(http_client, &query, token)
 	});
 	join_all(searches).await
 }
@@ -119,13 +121,15 @@ pub fn write_refresh_results(
 /// 便捷组合: 先并发拉取(fetch_all)再落库(write_refresh_results), 一次调用完成整个市场缓存
 /// 刷新流程, 返回本次成功写入的资源条数之和。供不受 Tauri 命令 Send 约束的调用方使用(本模块
 /// 测试、未来可能的后台定时任务); commands::market::market_refresh 出于 Send 约束改为分两步
-/// 调用 fetch_all/write_refresh_results, 不使用本函数(见文件头注释"关于拆分")
+/// 调用 fetch_all/write_refresh_results, 不使用本函数(见文件头注释"关于拆分")。http_client
+/// 同 fetch_all, 由调用方传入
 pub async fn refresh(
 	conn: &Connection,
 	sources: &[Box<dyn SourceProvider>],
 	github_token: Option<&str>,
+	http_client: &reqwest::Client,
 ) -> Result<usize> {
-	let outcomes = fetch_all(sources, github_token).await;
+	let outcomes = fetch_all(sources, github_token, http_client).await;
 	write_refresh_results(conn, outcomes)
 }
 
@@ -148,21 +152,22 @@ pub fn detail(conn: &Connection, source_type: i64, ext_id: &str) -> Result<Optio
 /// all_sources(), 单测注入 FakeSource), 与 fetch_all 同一测试性约定, 使本函数可脱离真实网络测试。
 /// source_type 在 sources 里找不到匹配 id(理论不会发生: 三源均覆盖 SourceId 全部三个变体, 除非
 /// 调用方注入了残缺的源列表)时返回 Err; cached_detail 通常是此前 detail() 查到的完整市场资源
-/// 记录, 其 install_manifest 决定 fetch_payload 具体怎么拉
+/// 记录, 其 install_manifest 决定 fetch_payload 具体怎么拉。http_client 同 fetch_all, 由调用方
+/// 传入(生产用依当前 Settings 构造的客户端, 使代理/超时真正生效)
 pub async fn fetch_install_payload(
 	sources: &[Box<dyn SourceProvider>],
 	source_type: i64,
 	token: Option<&str>,
 	cached_detail: &MarketResource,
+	http_client: &reqwest::Client,
 ) -> Result<InstallPayload> {
 	let target_id = SourceId::from_i64(source_type);
 	let provider = sources
 		.iter()
 		.find(|source| source.id() == target_id)
 		.ok_or_else(|| anyhow!("未找到 source_type={source_type} 对应的市场源"))?;
-	let http_client = client();
 	provider
-		.fetch_payload(&http_client, cached_detail, token)
+		.fetch_payload(http_client, cached_detail, token)
 		.await
 }
 
@@ -316,7 +321,10 @@ pub fn write_installed(
 /// 不接触数据库), 最后同步落地入库(write_installed), 一次调用完成整个安装流程, 返回落库后的完整
 /// Resource。供不受 Tauri 命令 Send 约束的调用方使用(本模块测试、未来可能的后台任务);
 /// commands::market::market_install 出于 Send 约束(见文件头注释"关于拆分")改为三段式调用(查详情
-/// 持锁 -> 异步拉取不持锁 -> 落库持锁), 不使用本函数。ext_id 对应的市场资源不存在时返回 Err
+/// 持锁 -> 异步拉取不持锁 -> 落库持锁), 不使用本函数。ext_id 对应的市场资源不存在时返回 Err。
+/// http_client 同 fetch_all, 由调用方传入; 新增该参数后入参数量超过 clippy 默认阈值, 均为
+/// 语义独立、不便合并成结构体的平铺参数, 与 infra::repo_sync::add_item 同一豁免惯例
+#[allow(clippy::too_many_arguments)]
 pub async fn install(
 	conn: &Connection,
 	data_dir: &Path,
@@ -325,10 +333,12 @@ pub async fn install(
 	ext_id: &str,
 	token: Option<&str>,
 	env_overrides: &BTreeMap<String, String>,
+	http_client: &reqwest::Client,
 ) -> Result<Resource> {
 	let cached_detail = repo_market::get(conn, source_type, ext_id)?
 		.ok_or_else(|| anyhow!("市场资源不存在: source_type={source_type}, ext_id={ext_id}"))?;
-	let payload = fetch_install_payload(sources, source_type, token, &cached_detail).await?;
+	let payload =
+		fetch_install_payload(sources, source_type, token, &cached_detail, http_client).await?;
 	write_installed(conn, data_dir, &cached_detail, payload, env_overrides)
 }
 
@@ -344,6 +354,7 @@ mod tests {
 	use super::*;
 	use crate::domain::market::InstallManifest;
 	use crate::domain::resource::ResourceType;
+	use crate::infra::http::client;
 
 	/// 建一个已迁移好 10 张表结构的内存库, 供本模块测试复用(migrate 为 pub(crate), 见 infra::store)
 	fn setup_conn() -> Connection {
@@ -461,7 +472,7 @@ mod tests {
 		});
 		let sources = vec![failing_source, ok_source];
 
-		let count = refresh(&conn, &sources, None).await.unwrap();
+		let count = refresh(&conn, &sources, None, &client()).await.unwrap();
 
 		assert_eq!(count, 1, "失败源应贡献 0, 只有成功源的 1 条应计入");
 		let (items, total) = repo_market::query(&conn, &sample_query()).unwrap();
@@ -495,7 +506,7 @@ mod tests {
 		});
 		let sources = vec![github_source, public_source];
 
-		refresh(&conn, &sources, Some("gh-secret-token"))
+		refresh(&conn, &sources, Some("gh-secret-token"), &client())
 			.await
 			.unwrap();
 
@@ -516,7 +527,7 @@ mod tests {
 	async fn refresh_returns_zero_for_empty_source_list() {
 		let conn = setup_conn();
 		let sources: Vec<Box<dyn SourceProvider>> = Vec::new();
-		let count = refresh(&conn, &sources, None).await.unwrap();
+		let count = refresh(&conn, &sources, None, &client()).await.unwrap();
 		assert_eq!(count, 0);
 	}
 
@@ -808,6 +819,7 @@ mod tests {
 			i64::from(SourceId::GithubMcp),
 			Some("gh-token"),
 			&detail,
+			&client(),
 		)
 		.await
 		.unwrap();
@@ -825,8 +837,14 @@ mod tests {
 		let sources: Vec<Box<dyn SourceProvider>> = Vec::new();
 		let detail = sample_mcp_resource(SourceId::GithubMcp, "demo-mcp");
 
-		let result =
-			fetch_install_payload(&sources, i64::from(SourceId::GithubMcp), None, &detail).await;
+		let result = fetch_install_payload(
+			&sources,
+			i64::from(SourceId::GithubMcp),
+			None,
+			&detail,
+			&client(),
+		)
+		.await;
 
 		assert!(result.is_err());
 	}
@@ -863,6 +881,7 @@ mod tests {
 			"demo-skill",
 			None,
 			&BTreeMap::new(),
+			&client(),
 		)
 		.await
 		.unwrap();
@@ -894,6 +913,7 @@ mod tests {
 			"nope",
 			None,
 			&BTreeMap::new(),
+			&client(),
 		)
 		.await;
 

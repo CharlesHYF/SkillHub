@@ -34,6 +34,7 @@ impl AppState {
 pub fn run() {
 	tauri::Builder::default()
 		.plugin(tauri_plugin_opener::init())
+		.plugin(tauri_plugin_dialog::init())
 		.setup(|app| {
 			// 初始化数据库(路径: 应用数据目录/skillhub.db), 失败即视为无法启动
 			let dir = app.path().app_data_dir().expect("无法获取应用数据目录");
