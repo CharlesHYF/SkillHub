@@ -1,7 +1,7 @@
 // 文件作用: 导入导出(Import/Export)相关 Tauri command 的类型化封装 —— 导出包(export_bundle)、
 //           导入预览(import_preview)、导入执行(import_bundle)、导入导出历史(impexp_history)。
 //           Manifest 字段形状取自 M3 计划 Task 1(domain::portability::Manifest, camelCase
-//           序列化); ImportOutcome 计划文档未给出具体字段, 按已知用途做最小假设(见类型注释)
+//           序列化); ImportOutcome 与后端 domain::portability::ImportOutcome 逐字段对齐(见类型注释)
 // 创建日期: 2026-07-10
 import { invoke } from '@tauri-apps/api/core';
 
@@ -56,12 +56,17 @@ export interface ImportPreview {
 	schemaOk: boolean;
 }
 
-/** 一次导入执行的结果。后端契约仅给出返回类型名, 未定稿具体字段; 这里按与 ImpexpRow 相同的
- * status/summary 口径做最小假设, 供导入完成后的提示文案与是否刷新历史使用 */
+/** 一次导入执行的结果, 与后端 domain::portability::ImportOutcome 逐字段对齐
+ * (解析/校验硬失败在 importBundle 之前就已抛错, 故 status 不含 0 失败) */
 export interface ImportOutcome {
-	/** 结果状态: 0 失败 / 1 成功 / 2 部分成功, 与 ImpexpRow.status 同口径 */
-	status: 0 | 1 | 2;
-	summary: string;
+	/** 新导入(含覆盖策略下的覆盖)的资源数 */
+	imported: number;
+	/** 因同名已存在而跳过的资源数(跳过策略) */
+	skipped: number;
+	/** 因冲突改名后落地的资源数(保留两者策略) */
+	renamed: number;
+	/** 结果状态: 1 成功 / 2 部分成功(如某些关联在本机找不到对应 Agent), 与 ImpexpRow.status 同口径 */
+	status: 1 | 2;
 }
 
 /** 一条导入导出历史记录 */

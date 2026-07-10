@@ -67,8 +67,10 @@ describe('portability api', () => {
 
 	it('importBundle 以 command 名 import_bundle 调用并传 path/strategy/autoSync, 返回结果', async () => {
 		const outcome: ImportOutcome = {
+			imported: 128,
+			skipped: 0,
+			renamed: 0,
 			status: 1,
-			summary: 'Skill 128 · MCP 45 · 配置 23 · Agent 8',
 		};
 		vi.mocked(invoke).mockResolvedValueOnce(outcome);
 

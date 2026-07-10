@@ -66,7 +66,12 @@ describe('Portability 页面', () => {
 		vi.mocked(importPreview).mockReset().mockResolvedValue(fullPreview);
 		vi.mocked(importBundle)
 			.mockReset()
-			.mockResolvedValue({ status: 1, summary: 'ok' } satisfies ImportOutcome);
+			.mockResolvedValue({
+				imported: 3,
+				skipped: 0,
+				renamed: 0,
+				status: 1,
+			} satisfies ImportOutcome);
 		vi.mocked(impexpHistory).mockReset().mockResolvedValue([]);
 	});
 
