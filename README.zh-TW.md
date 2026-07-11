@@ -33,8 +33,8 @@ Skill 與 MCP 統一管理器 —— 一處管理本機所有 AI 工具的 Skill
 
 - Claude Code · Claude Desktop
 - Cursor · Windsurf · Cline
-- VS Code · Gemini CLI
-- Codex · Hermes
+- VS Code · Gemini CLI · Codex
+- Hermes · CodeBuddy · WorkBuddy
 
 ## 🖥️ 介面
 
@@ -80,7 +80,7 @@ prototype/    原型圖
 
 目前 `0.1.0`，核心功能可用。已知邊界：
 
-- 社群登入（GitHub / Google / Microsoft OAuth）需先各自註冊 OAuth 應用程式並填入憑證（見 `OAUTH_SETUP.md`）；在此之前可用"手動輸入存取權杖(PAT)"路徑。
+- 社群登入（GitHub / Google / Microsoft OAuth）需先各自註冊 OAuth 應用程式並把 `client_id` 填入 `src-tauri/src/services/auth.rs` 頂部常數；在此之前可用"手動輸入存取權杖(PAT)"路徑。
 - 部分設定（自訂儲存目錄、更新通道）目前僅持久化保存，尚未接入執行期行為，介面已如實標註。
 
 ## 📄 授權

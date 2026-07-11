@@ -33,8 +33,8 @@ SkillHub auto-detects the following local AI tools and reads/writes their Skill 
 
 - Claude Code · Claude Desktop
 - Cursor · Windsurf · Cline
-- VS Code · Gemini CLI
-- Codex · Hermes
+- VS Code · Gemini CLI · Codex
+- Hermes · CodeBuddy · WorkBuddy
 
 ## 🖥️ Screens
 
@@ -80,7 +80,7 @@ prototype/    prototype mockups
 
 Currently `0.1.0`, core features working. Known boundaries:
 
-- Social login (GitHub / Google / Microsoft OAuth) requires registering each OAuth app and filling in credentials first (see `OAUTH_SETUP.md`); until then, the "enter a personal access token (PAT)" path works.
+- Social login (GitHub / Google / Microsoft OAuth) requires registering each OAuth app and filling each `client_id` into the constants at the top of `src-tauri/src/services/auth.rs`; until then, the "enter a personal access token (PAT)" path works.
 - Some settings (custom storage directories, update channel) are persisted but not yet wired to runtime behavior — the UI labels this honestly.
 
 ## 📄 License
