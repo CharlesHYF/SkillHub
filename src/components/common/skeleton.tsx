@@ -74,15 +74,17 @@ interface SkeletonCardsProps {
 }
 
 /** 卡片网格骨架: count 张卡片占位(外形近似 MarketCard), 贴合 Marketplace 卡片网格区; 列数规则
- * 与 marketplace/market-list.tsx 的实际卡片网格保持一致(auto-fill+minmax, 每列至少 240px 按
- * 可用宽度自动降列), 避免加载态与加载完成后的实际内容列数对不上而"跳一下" */
+ * 与 marketplace/market-list.tsx 的实际卡片网格保持一致(稳定两列, 仅容器极窄时降为单列),
+ * 避免加载态与加载完成后的实际内容列数对不上而"跳一下"。本组件不自带 @container: 调用方
+ * (market-list.tsx)已在外层声明容器, @max-[500px]: 直接查询该祖先容器即可, 断点取值同一口径;
+ * 若未来脱离该外层容器单独复用, 会安全回退为固定两列(容器查询无祖先容器时不生效, 不会报错) */
 export function SkeletonCards({ count = 4, className }: SkeletonCardsProps) {
 	return (
 		<div
 			role="status"
 			aria-label="加载中"
 			className={cn(
-				'grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4',
+				'grid auto-rows-min grid-cols-2 gap-4 @max-[500px]:grid-cols-1',
 				className,
 			)}
 		>

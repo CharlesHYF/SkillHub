@@ -128,7 +128,7 @@ export function MarketList({
 	const currentSortLabel = SORT_OPTIONS.find((o) => o.value === sort)?.label ?? '推荐';
 
 	return (
-		<div className="flex h-full min-w-0 flex-1 flex-col gap-4">
+		<div className="@container flex h-full min-w-0 flex-1 flex-col gap-4">
 			<div className="flex flex-wrap items-center gap-2">
 				<div className="relative min-w-64 flex-1">
 					<Search
@@ -206,11 +206,14 @@ export function MarketList({
 				</DropdownMenu>
 			</div>
 
-			{/* 固定 grid-cols-2 在详情面板(w-90 固定宽)展开、挤占大半可用宽度时会把每张卡片压到
-			    远小于舒适阅读宽度, 导致卡片文字近乎逐字换行(实机窄窗反馈的具体症状); 改用
-			    auto-fill+minmax 按"每列至少 240px"自动决定列数——够宽时多列, 挤占后自动降到
-			    单列, 而不是死守 2 列硬撑 */}
-			<div className="grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4 overflow-auto">
+			{/* 卡片网格还原原型: 稳定两列(grid-cols-2), 不用 auto-fill+minmax 按容器宽度自动铺列
+			    (此前的写法在宽屏详情面板收起时会铺出五六列窄卡片, 观感与原型的两列清爽版式不符,
+			    见本任务报告)。仅在详情面板常驻展开、窗口接近应用最小宽 1024(tauri.conf.json
+			    minWidth)时, 卡片网格实际可用宽度会被压缩到不足以舒适容纳两列, 此时用容器查询
+			    (@container, 而非视口媒体查询——是否挤压取决于详情面板是否占走 360px, 与视口宽度
+			    本身是两回事)优雅降级为单列; 500px 断点按"两列各至少约 240px + 网格间距 16px"估算,
+			    与本文件旧版 auto-fill 的单列最小宽约定同一口径 */}
+			<div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-4 overflow-auto @max-[500px]:grid-cols-1">
 				{isLoading ? (
 					<SkeletonCards count={6} className="col-span-full" />
 				) : visibleItems.length === 0 ? (

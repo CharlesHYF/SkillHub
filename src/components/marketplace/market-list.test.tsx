@@ -209,4 +209,19 @@ describe('MarketList', () => {
 		expect(screen.getByRole('status', { name: '加载中' })).toBeInTheDocument();
 		expect(screen.queryByText('暂无匹配的资源')).not.toBeInTheDocument();
 	});
+
+	// 还原原型第 2 屏"稳定两列", 不再用 auto-fill+minmax 按可用宽度自动铺出很多窄列(实机宽屏
+	// 反馈的具体症状); 仅在详情面板展开挤占大半宽度、逼近应用最小宽 1024 时才用容器查询优雅降级
+	// 单列(见 market-list.tsx 顶部对应注释), jsdom 不跑真实布局/容器查询, 这里只锁定类名不回归
+	it('卡片网格默认应为稳定两列(grid-cols-2), 并声明窄容器降级单列的类名(容器查询)', () => {
+		const items = [
+			makeMarketResource({ name: 'data-visualizer' }),
+			makeMarketResource({ name: 'web-scraper' }),
+		];
+		render(<MarketList {...baseProps} items={items} />);
+
+		const grid = screen.getByText('data-visualizer').closest('.grid-cols-2');
+		expect(grid).not.toBeNull();
+		expect(grid?.className).toMatch(/@max-\[500px\]:grid-cols-1/);
+	});
 });

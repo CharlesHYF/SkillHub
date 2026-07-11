@@ -98,6 +98,14 @@ describe('MarketCard', () => {
 		expect(screen.getByText('data-visualizer').closest('.cursor-pointer')).not.toBeNull();
 	});
 
+	// 卡片根元素是两列 grid 的 grid item, 必须带 min-w-0, 否则较长的名称/描述会把 grid item
+	// 撑宽到超过所在列宽(grid item 默认 min-width:auto), 挤压甚至溢出两列网格(见
+	// market-list.tsx 卡片网格改回稳定两列后的对应注释)
+	it('卡片根元素应带 min-w-0 防止两列网格下溢出', () => {
+		render(<MarketCard {...baseProps} resource={makeMarketResource()} />);
+		expect(screen.getByText('data-visualizer').closest('.min-w-0')).not.toBeNull();
+	});
+
 	it('selected 为真时卡片应带 data-state=selected', () => {
 		const resource = makeMarketResource();
 		render(<MarketCard {...baseProps} resource={resource} selected />);

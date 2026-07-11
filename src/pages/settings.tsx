@@ -86,8 +86,17 @@ export default function Settings() {
 	// 避免首屏就能点保存把兜底默认值当成用户改动提交上去
 	const isDirty = settingsQuery.data ? !settingsEqual(draft, settingsQuery.data) : false;
 
+	// "恢复默认": 存储目录两项不回退到硬编码空串, 而是保留 settingsGet 已加载到的真实默认目录
+	// (后端 M5 起 settings_get 回填"空则填 data_dir/skills·mcp 并持久化", 见 commit 319be75),
+	// 否则用户会看到目录被清空成空串这一明显倒退; 其余偏好字段维持"回到硬编码默认值"的既有语义
+	// (settingsQuery.data 未加载完成时兜底 DEFAULT_SETTINGS 的空串, 与首屏渲染兜底同一惯例)
 	function handleReset() {
-		setDraft(DEFAULT_SETTINGS);
+		setDraft({
+			...DEFAULT_SETTINGS,
+			storageSkillDir:
+				settingsQuery.data?.storageSkillDir ?? DEFAULT_SETTINGS.storageSkillDir,
+			storageMcpDir: settingsQuery.data?.storageMcpDir ?? DEFAULT_SETTINGS.storageMcpDir,
+		});
 	}
 
 	function handleSave() {
