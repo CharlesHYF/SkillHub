@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "SkillHub - 统一管理并同步本机 AI 工具的 Skill 与 MCP"
 authors = ["Charles"]
 edition = "2021"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
