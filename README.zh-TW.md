@@ -6,14 +6,16 @@
 
 Skill 與 MCP 統一管理器 —— 一處管理本機所有 AI 工具的 Skill 與 MCP，一鍵同步到全部 Agent。
 
-![Version](https://img.shields.io/badge/version-0.1.0-14b8a6?style=flat-square)
-![Tauri](https://img.shields.io/badge/Tauri-v2-24C8DB?style=flat-square&logo=tauri&logoColor=white)
-![React](https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black)
-![Rust](https://img.shields.io/badge/Rust-stable-000000?style=flat-square&logo=rust&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white)
-![SQLite](https://img.shields.io/badge/SQLite-bundled-003B57?style=flat-square&logo=sqlite&logoColor=white)
-![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-555555?style=flat-square)
-![License](https://img.shields.io/badge/license-unspecified-lightgrey?style=flat-square)
+<p align="center">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.1.0-14b8a6?style=flat-square">
+  <img alt="Tauri" src="https://img.shields.io/badge/Tauri-v2-24C8DB?style=flat-square&logo=tauri&logoColor=white">
+  <img alt="React" src="https://img.shields.io/badge/React-18-61DAFB?style=flat-square&logo=react&logoColor=black">
+  <img alt="Rust" src="https://img.shields.io/badge/Rust-stable-000000?style=flat-square&logo=rust&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-strict-3178C6?style=flat-square&logo=typescript&logoColor=white">
+  <img alt="SQLite" src="https://img.shields.io/badge/SQLite-bundled-003B57?style=flat-square&logo=sqlite&logoColor=white">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-555555?style=flat-square">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-14b8a6?style=flat-square">
+</p>
 
 </div>
 
@@ -83,4 +85,6 @@ prototype/    原型圖
 
 ## 📄 授權
 
-尚未指定開源授權條款。若要開源或散布，請先補上 `LICENSE` 檔案後再對外發布。
+[MIT](LICENSE) © 2026 Charles
+
+選 MIT 的原因：它是最簡潔、最寬鬆的主流開源授權 —— 任何人可自由使用、修改、散布乃至商用，僅需保留版權聲明，法律負擔與採用門檻都最低；且與本專案所依賴生態（React、Tauri、絕大多數 npm/cargo 套件）的主流授權一致，二次開發與整合無摩擦。若日後更看重專利授權保護，可再評估 Apache-2.0。
