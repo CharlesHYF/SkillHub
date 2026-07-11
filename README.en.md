@@ -86,5 +86,3 @@ Currently `0.1.0`, core features working. Known boundaries:
 ## 📄 License
 
 [MIT](LICENSE) © 2026 Charles
-
-Why MIT: it's the simplest and most permissive mainstream open-source license — anyone may freely use, modify, distribute, and even sell it, as long as the copyright notice is kept, giving the lowest legal overhead and adoption barrier. It also matches the prevailing license across this project's ecosystem (React, Tauri, and the vast majority of npm/cargo packages), so downstream reuse and integration stay frictionless. If explicit patent protection matters later, Apache-2.0 can be reconsidered.
