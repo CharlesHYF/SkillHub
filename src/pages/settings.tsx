@@ -4,9 +4,9 @@
 //           (恢复默认/保存更改)。设置经 settingsGet 拉取后接入本地可编辑态(draft), 各分区改动
 //           只影响 draft, 点击"保存更改"才经 settingsSave 整份提交; "恢复默认"把 draft 重置为
 //           本文件硬编码的默认 Settings(与后端 domain::setting::Settings 的 Default 同口径,
-//           见下方 DEFAULT_SETTINGS 注释), 而不是回退到 settingsGet 加载到的值。账号与认证区
-//           复用既有 src/api/auth.ts 封装(auth_accounts/auth_login/auth_logout/
-//           auth_enter_token), 不新造认证相关 command
+//           见下方 DEFAULT_SETTINGS 注释), 而不是回退到 settingsGet 加载到的值——存储目录两项
+//           例外, 见 handleReset 注释。账号与认证区复用既有 src/api/auth.ts 封装
+//           (auth_accounts/auth_login/auth_logout/auth_enter_token), 不新造认证相关 command
 // 创建日期: 2026-07-10
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -27,8 +27,9 @@ const AUTH_ACCOUNTS_KEY = 'auth-accounts';
 
 /** 设置默认值, 与后端 domain::setting::Settings 的 Default 实现同口径(见本任务契约: 目录空串,
  * 前 3 个同步开关默认开/仅同步已启用项默认关, 代理默认系统模式且地址均为空串, 超时默认 30 秒,
- * 更新通道默认 Stable)。"恢复默认"按钮据此重置本地编辑态, 首次加载在 settingsGet 结果返回前也
- * 先用它兜底渲染, 避免控件短暂处于 undefined 态 */
+ * 更新通道默认 Stable)。首次加载在 settingsGet 结果返回前先用它兜底渲染, 避免控件短暂处于
+ * undefined 态。"恢复默认"按钮也据此重置本地编辑态, 但存储目录两项(storageSkillDir/
+ * storageMcpDir)是例外, 不会真的回到这里的空串, 见 handleReset 注释 */
 const DEFAULT_SETTINGS: Settings = {
 	storageSkillDir: '',
 	storageMcpDir: '',
