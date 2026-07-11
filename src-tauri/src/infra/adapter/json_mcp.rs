@@ -207,6 +207,12 @@ impl AgentAdapter for JsonMcpAdapter {
 
 		Ok(outcomes)
 	}
+
+	/// 转发给 self.skill_target.export_skill(见 SkillTarget::export_skill, M6 Task BE-2 从已
+	/// 检测 Agent 反向导入已装 Skill 到本地库所需的"读回可落地内容"), 不重复实现
+	fn export_skill(&self, name: &str, dest_dir: &Path) -> Result<bool> {
+		self.skill_target.export_skill(&self.home, name, dest_dir)
+	}
 }
 
 /// 把 McpServerDef 转为写回配置文件用的 JSON 对象: 有 command 才写 command/args/env,
@@ -870,5 +876,39 @@ mod tests {
 
 		let installed = dir.path().join(".claude/skills/demo-skill/SKILL.md");
 		assert!(installed.exists());
+	}
+
+	// export_skill: 应转发给 skill_target.export_skill, 把已装 Skill 内容导出到指定目录
+	// (供 M6 Task BE-2 从已检测 Agent 反向导入使用); 名称不存在应返回 Ok(false)
+	#[test]
+	fn export_skill_delegates_to_skill_target() {
+		let dir = tempdir().unwrap();
+		let skill_dir = dir.path().join(".claude/skills/demo-skill");
+		fs::create_dir_all(&skill_dir).unwrap();
+		fs::write(
+			skill_dir.join("SKILL.md"),
+			"---\nversion: 1.0.0\n---\n内容\n",
+		)
+		.unwrap();
+
+		let adapter = JsonMcpAdapter::new(
+			AgentKind::ClaudeCode,
+			dir.path().to_path_buf(),
+			vec![PathBuf::from(".claude.json")],
+			"mcpServers",
+			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
+		);
+
+		let dest = dir.path().join("exported/demo-skill");
+		let ok = adapter.export_skill("demo-skill", &dest).unwrap();
+		assert!(ok);
+		assert_eq!(
+			fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+			"---\nversion: 1.0.0\n---\n内容\n"
+		);
+
+		assert!(!adapter
+			.export_skill("no-such-skill", &dir.path().join("exported/nope"))
+			.unwrap());
 	}
 }

@@ -99,6 +99,25 @@ pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Option<Resource>> {
 	.optional()
 }
 
+/// 按 (res_type, name) 精确查询单条资源(与 resource 表的 uk_resource_type_name 唯一索引同一
+/// 维度), 不存在返回 None(而非 Err); name 为精确匹配(非 list 的 keyword 模糊匹配), 供 M6 Task
+/// BE-2(services::agent_import, 从已检测 Agent 反向导入已装 Skill/MCP 到本地库)按类型+名称去重
+/// 时复用 —— 已有同类型同名资源则复用其 id, 不重复落地/不重复插入
+pub fn find_by_type_and_name(
+	conn: &Connection,
+	res_type: ResourceType,
+	name: &str,
+) -> rusqlite::Result<Option<Resource>> {
+	conn.query_row(
+		"SELECT id, res_type, name, display_name, version, source_type, local_path, enabled, \
+		 create_time, update_time \
+		 FROM resource WHERE res_type = ?1 AND name = ?2",
+		params![i64::from(res_type), name],
+		row_to_resource,
+	)
+	.optional()
+}
+
 /// 覆盖更新描述性元信息(display_name/version/local_path), 返回受影响行数
 pub fn update_meta(
 	conn: &Connection,
@@ -285,5 +304,37 @@ mod tests {
 		let affected = delete(&conn, id).unwrap();
 		assert_eq!(affected, 1);
 		assert_eq!(get(&conn, id).unwrap(), None);
+	}
+
+	// find_by_type_and_name: 命中时应返回完整资源; 类型相符但名称不同、名称相符但类型不同,
+	// 均不应误命中(精确匹配 (res_type,name) 这一对, 与 uk_resource_type_name 同一维度)
+	#[test]
+	fn find_by_type_and_name_matches_exact_type_and_name_only() {
+		let conn = setup_conn();
+		let id = insert(&conn, &sample_new_resource()).unwrap();
+
+		let found = find_by_type_and_name(&conn, ResourceType::Skill, "demo-skill").unwrap();
+		assert_eq!(found.map(|r| r.id), Some(id));
+
+		assert_eq!(
+			find_by_type_and_name(&conn, ResourceType::Skill, "other-name").unwrap(),
+			None,
+			"名称不同不应命中"
+		);
+		assert_eq!(
+			find_by_type_and_name(&conn, ResourceType::Mcp, "demo-skill").unwrap(),
+			None,
+			"类型不同(同名)不应命中"
+		);
+	}
+
+	// find_by_type_and_name: 查不存在的 (res_type,name) 应返回 None, 不报错
+	#[test]
+	fn find_by_type_and_name_returns_none_when_absent() {
+		let conn = setup_conn();
+		assert_eq!(
+			find_by_type_and_name(&conn, ResourceType::Skill, "nope").unwrap(),
+			None
+		);
 	}
 }

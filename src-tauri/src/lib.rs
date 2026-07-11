@@ -59,6 +59,7 @@ pub fn run() {
 			commands::library::resource_import_local,
 			commands::library::resource_set_enabled,
 			commands::library::resource_delete,
+			commands::library::library_import_from_agents,
 			commands::agent::agent_detect,
 			commands::agent::agent_list,
 			commands::sync::assoc_set,

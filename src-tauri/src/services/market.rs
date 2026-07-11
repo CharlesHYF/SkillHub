@@ -176,8 +176,10 @@ pub async fn fetch_install_payload(
 /// 路径分隔符, 产出意料之外的嵌套目录甚至写入失败(中间目录未创建); 统一替换为 '_' 后再用于落盘
 /// 路径。另外 "."/".."/空 这几个片段作为单层目录名会指向自身/父级, 而 write_skill_files 会对该
 /// 目录 remove_dir_all, 一旦命中会清空 skills 根乃至整个 data_dir(含数据库), 故一并回落为安全
-/// 占位名。以上转换均不影响数据库里 resource.name 本身(仍原样保留原始名称, 只有构造落盘路径这一步做转换)
-fn sanitize_path_segment(name: &str) -> String {
+/// 占位名。以上转换均不影响数据库里 resource.name 本身(仍原样保留原始名称, 只有构造落盘路径这一步做转换)。
+/// 可见性 pub(crate): 供 services::agent_import(M6 Task BE-2, 从已检测 Agent 反向导入已装
+/// Skill/MCP 到本地库)落地 MCP 定义文件前复用同一份净化逻辑, 不重复实现
+pub(crate) fn sanitize_path_segment(name: &str) -> String {
 	let replaced = name.replace(['/', '\\'], "_");
 	if replaced.is_empty() || replaced == "." || replaced == ".." {
 		"_".to_string()
@@ -255,8 +257,11 @@ fn mcp_def_to_file_json(def: &McpServerDef) -> Value {
 /// (required_env 已在 fetch_payload 阶段作为空串占位写入该 map, 见 infra::source::github_mcp::
 /// build_server_def 文档; 纯 Mcp 资源通常 env_overrides 为空, 覆盖操作对其是空操作, 不必单独
 /// 分支处理), 序列化为单定义 JSON(不重复携带 name, 见 mcp_def_to_file_json 文档)写入
-/// data_dir/mcp/<safe_name>.json, 返回该文件完整路径(供落库 local_path 列)
-fn write_mcp_def(
+/// data_dir/mcp/<safe_name>.json, 返回该文件完整路径(供落库 local_path 列)。
+/// 可见性 pub(crate): 供 services::agent_import(M6 Task BE-2)复用同一份 MCP 定义落盘逻辑——
+/// 从已检测 Agent 读到的 McpServerDef 同样要落成这种单定义 JSON 文件, 与市场安装的落地形状
+/// 完全一致, 不重复实现; 调用时传 env_overrides 为空 BTreeMap 即可(该场景不涉及模板占位覆盖)
+pub(crate) fn write_mcp_def(
 	data_dir: &Path,
 	safe_name: &str,
 	mut server_def: McpServerDef,

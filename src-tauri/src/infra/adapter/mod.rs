@@ -43,6 +43,15 @@ pub trait AgentAdapter {
 
 	/// 把差异计划应用到该 Agent 的配置文件, 返回每一项的执行结果
 	fn apply(&self, agent: &DetectedAgent, plan: &DiffPlan) -> Result<Vec<ItemOutcome>>;
+
+	/// 把本适配器对应工具里名为 `name` 的已装 Skill 内容导出到 `dest_dir`(统一整理为"含
+	/// SKILL.md 的目录"形态), 供 M6 Task BE-2(services::agent_import, 从已检测 Agent 反向导入
+	/// 已装 Skill/MCP 到本地库)复用 —— read_state().skills 只还原出 SkillRef{name,version}
+	/// 两个元数据字段, 不足以取到真正可落地的内容, 必须由本方法按各工具的 SkillTarget 落地形态
+	/// 回到磁盘上取原始内容(见 SkillTarget::export_skill, 各实现均只是转发给自身持有的
+	/// skill_target 字段, 不重复实现)。该 Skill 名不存在/内容缺失时返回 `Ok(false)`(不算错误,
+	/// 调用方应静默跳过), 成功导出返回 `Ok(true)`
+	fn export_skill(&self, name: &str, dest_dir: &Path) -> Result<bool>;
 }
 
 /// 全量适配器注册表; `home` 为家目录(测试时可注入临时目录, 避免探测逻辑触碰真实机器配置;
@@ -173,7 +182,7 @@ fn vscode_config_candidates() -> Vec<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-	use std::path::PathBuf;
+	use std::path::{Path, PathBuf};
 
 	use super::*;
 	use crate::domain::agent::AgentScope;
@@ -205,6 +214,10 @@ mod tests {
 		fn apply(&self, _agent: &DetectedAgent, _plan: &DiffPlan) -> Result<Vec<ItemOutcome>> {
 			Ok(Vec::new())
 		}
+
+		fn export_skill(&self, _name: &str, _dest_dir: &Path) -> Result<bool> {
+			Ok(false)
+		}
 	}
 
 	// AgentAdapter 应对象安全: 可装箱为 trait object 并逐一调用全部方法
@@ -232,6 +245,10 @@ mod tests {
 			.apply(&probe, &DiffPlan { items: Vec::new() })
 			.unwrap();
 		assert!(outcomes.is_empty());
+
+		assert!(!adapter
+			.export_skill("demo-skill", Path::new("/tmp/skillhub-test-export"))
+			.unwrap());
 	}
 
 	// all_adapters 累计应接入 9 款工具: Task 3 的 6 款 JSON mcpServers 在前, Task 4 追加的

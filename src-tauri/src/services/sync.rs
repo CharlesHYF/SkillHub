@@ -145,8 +145,10 @@ pub fn diff_for_agent(conn: &Connection, home: &Path, agent_id: i64) -> Result<D
 }
 
 /// 把 AgentRow(数据库持久化态)还原为 DetectedAgent(AgentAdapter::read_state/apply 所需的探测
-/// 态入参); 字段逐一对应, online 取自 status 列
-fn agent_row_to_detected(row: &AgentRow) -> DetectedAgent {
+/// 态入参); 字段逐一对应, online 取自 status 列。
+/// 可见性 pub(crate): 供 services::agent_import(M6 Task BE-2, 从已检测 Agent 反向导入已装
+/// Skill/MCP 到本地库)复用同一份换算逻辑, 与 diff_for_agent 取 adapter/组装探测态的方式一致
+pub(crate) fn agent_row_to_detected(row: &AgentRow) -> DetectedAgent {
 	DetectedAgent {
 		kind: row.agent_kind,
 		name: row.name.clone(),
@@ -157,8 +159,12 @@ fn agent_row_to_detected(row: &AgentRow) -> DetectedAgent {
 }
 
 /// 在全量适配器表里按 kind 找到对应的适配器; 找不到说明 all_adapters 未覆盖该 AgentKind
-/// (编程错误, 理论不会发生), 返回 Err 而非 panic
-fn find_adapter(adapters: &[Box<dyn AgentAdapter>], kind: AgentKind) -> Result<&dyn AgentAdapter> {
+/// (编程错误, 理论不会发生), 返回 Err 而非 panic。
+/// 可见性 pub(crate): 供 services::agent_import(M6 Task BE-2)复用同一份查找逻辑
+pub(crate) fn find_adapter(
+	adapters: &[Box<dyn AgentAdapter>],
+	kind: AgentKind,
+) -> Result<&dyn AgentAdapter> {
 	adapters
 		.iter()
 		.find(|adapter| adapter.kind() == kind)

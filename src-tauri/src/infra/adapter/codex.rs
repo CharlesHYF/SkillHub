@@ -193,6 +193,12 @@ impl AgentAdapter for CodexAdapter {
 
 		Ok(outcomes)
 	}
+
+	/// 转发给 self.skill_target.export_skill(见 SkillTarget::export_skill, M6 Task BE-2 从已
+	/// 检测 Agent 反向导入已装 Skill 到本地库所需的"读回可落地内容"), 不重复实现
+	fn export_skill(&self, name: &str, dest_dir: &Path) -> Result<bool> {
+		self.skill_target.export_skill(&self.home, name, dest_dir)
+	}
 }
 
 /// 把 McpServerDef 转为写回 config.toml 用的 TOML 表: 有 command 才写 command/args/env,
@@ -776,5 +782,34 @@ mod tests {
 		let agents_md = fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
 		assert!(agents_md.contains("<!-- skillhub:start:demo-skill@1.0.0 -->"));
 		assert!(agents_md.contains("内容"));
+	}
+
+	// export_skill: 应转发给 skill_target.export_skill(InstructionsFile 形态), 从 AGENTS.md
+	// 的标记块里取出内容(供 M6 Task BE-2 从已检测 Agent 反向导入使用); 名称不存在应返回 Ok(false)
+	#[test]
+	fn export_skill_delegates_to_skill_target() {
+		let dir = tempdir().unwrap();
+		fs::write(
+			dir.path().join("AGENTS.md"),
+			"<!-- skillhub:start:demo-skill@2.0.0 -->\n内容正文\n<!-- skillhub:end:demo-skill -->\n",
+		)
+		.unwrap();
+
+		let adapter = CodexAdapter::new(
+			dir.path().to_path_buf(),
+			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
+		);
+
+		let dest = dir.path().join("exported/demo-skill");
+		let ok = adapter.export_skill("demo-skill", &dest).unwrap();
+		assert!(ok);
+		assert_eq!(
+			fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+			"内容正文"
+		);
+
+		assert!(!adapter
+			.export_skill("no-such-skill", &dir.path().join("exported/nope"))
+			.unwrap());
 	}
 }
