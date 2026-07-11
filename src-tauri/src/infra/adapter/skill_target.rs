@@ -1,8 +1,12 @@
-// 文件作用: Skill 落地策略 —— 描述各 AI 工具把"已装 Skill 清单"落在磁盘上的三种形态
+// 文件作用: Skill 落地策略 —— 描述各 AI 工具把"已装 Skill 清单"落在磁盘上的形态
 //           (SkillTarget), 并提供 read_skills 统一读出当前已装清单, 供各 AgentAdapter::
-//           read_state 组装 ActualState.skills。三种形态覆盖 Task 3/4 接入的 8 款工具,
+//           read_state 组装 ActualState.skills。前三种形态覆盖 Task 3/4 接入的 8 款工具,
 //           具体每款工具映射到哪种形态见 adapter::mod::json_mcp_agent_configs 与
-//           adapter::mod::all_adapters。
+//           adapter::mod::all_adapters。本任务(新增 CodeBuddy/WorkBuddy 适配器)追加第四种
+//           形态 None —— CodeBuddy 官方文档未提供任何本地 Skill/rules 目录约定, 用它占位
+//           "该工具结构上仍带 skill_target 字段, 但实际读写恒为空/no-op", 搭配
+//           JsonMcpAdapter::supports 据此把 Skill 能力如实汇报为 false(见该文件), 避免在用户
+//           磁盘上凭空捏造一个从未被验证过的目录/文件约定。
 //           InstructionsFile 变体依赖 SkillHub 自定义的标记块格式登记"这段内容是 SkillHub
 //           装的哪个 Skill":
 //               <!-- skillhub:start:<name>@<version> -->
@@ -42,6 +46,11 @@ pub enum SkillTarget {
 	/// 单文件聚合家族(GeminiCli/Codex): 用单个指令文件(如 `GEMINI.md`/`AGENTS.md`)登记
 	/// SkillHub 已装的 Skill, 按文件头注释所述的标记块格式解析。字段为相对家目录的路径
 	InstructionsFile(PathBuf),
+	/// 空占位形态(CodeBuddy): 该工具官方文档未提供任何本地 Skill/rules 目录约定, 无处落地。
+	/// read_skills 恒返回空清单, write_skill/remove_skill 恒为 no-op(Ok(())), export_skill
+	/// 恒返回 `Ok(false)` —— 三者均不触碰磁盘, 不在用户机器上产生任何文件/目录(见文件头注释,
+	/// 严禁凭猜测捏造一个未核实的落地路径)
+	None,
 }
 
 impl SkillTarget {
@@ -54,6 +63,7 @@ impl SkillTarget {
 			SkillTarget::ClaudeSkillsDir(rel) => read_claude_skills_dir(&home.join(rel)),
 			SkillTarget::RulesDir { dir, ext } => read_rules_dir(&home.join(dir), ext),
 			SkillTarget::InstructionsFile(rel) => read_instructions_file(&home.join(rel)),
+			SkillTarget::None => Vec::new(),
 		}
 	}
 
@@ -81,6 +91,7 @@ impl SkillTarget {
 			SkillTarget::InstructionsFile(rel) => {
 				write_instructions_file(&home.join(rel), name, version, src_dir)
 			}
+			SkillTarget::None => Ok(()),
 		}
 	}
 
@@ -91,6 +102,7 @@ impl SkillTarget {
 			SkillTarget::ClaudeSkillsDir(rel) => remove_claude_skills_dir(&home.join(rel), name),
 			SkillTarget::RulesDir { dir, ext } => remove_rules_dir(&home.join(dir), ext, name),
 			SkillTarget::InstructionsFile(rel) => remove_instructions_file(&home.join(rel), name),
+			SkillTarget::None => Ok(()),
 		}
 	}
 
@@ -122,6 +134,7 @@ impl SkillTarget {
 			SkillTarget::InstructionsFile(rel) => {
 				export_instructions_file(&home.join(rel), name, dest_dir)
 			}
+			SkillTarget::None => Ok(false),
 		}
 	}
 }
@@ -1119,5 +1132,66 @@ mod tests {
 		assert!(!broken_target
 			.export_skill(dir.path(), "broken", &dir.path().join("out2"))
 			.unwrap());
+	}
+
+	// ---------- None(本任务新增: CodeBuddy 纯 MCP, 无本地 Skill 落地形态占位) ----------
+
+	// None::read_skills: 无论 home 下实际有什么文件/目录, 都应恒返回空清单(该形态压根不看磁盘)
+	#[test]
+	fn none_read_skills_always_returns_empty_regardless_of_home_contents() {
+		let dir = tempdir().unwrap();
+		// 即便 home 下凑巧存在同名的 ClaudeSkillsDir 形态目录, None 也不应读到它
+		let skill_dir = dir.path().join(".claude/skills/demo-skill");
+		fs::create_dir_all(&skill_dir).unwrap();
+		fs::write(skill_dir.join("SKILL.md"), "---\nversion: 1.0.0\n---\n").unwrap();
+
+		let target = SkillTarget::None;
+		assert!(target.read_skills(dir.path()).is_empty());
+	}
+
+	// None::write_skill: 应恒返回 Ok(()), 且不在 home 下创建任何新文件/目录(真正的 no-op,
+	// 不允许在用户磁盘留下垃圾)
+	#[test]
+	fn none_write_skill_is_noop_and_creates_nothing_on_disk() {
+		let dir = tempdir().unwrap();
+		let src_dir = make_src_dir(dir.path(), "---\nversion: 1.0.0\n---\n正文\n");
+
+		let entries_before: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+
+		let target = SkillTarget::None;
+		target
+			.write_skill(dir.path(), "demo-skill", "1.0.0", &src_dir)
+			.unwrap();
+
+		let entries_after: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+		assert_eq!(
+			entries_before.len(),
+			entries_after.len(),
+			"write_skill 不应在 home 下新增任何文件/目录"
+		);
+	}
+
+	// None::remove_skill: 应恒返回 Ok(()), 与其它形态"不存在即已达成目的"的宽松风格一致
+	#[test]
+	fn none_remove_skill_is_always_ok_noop() {
+		let dir = tempdir().unwrap();
+		let target = SkillTarget::None;
+		assert!(target.remove_skill(dir.path(), "demo-skill").is_ok());
+	}
+
+	// None::export_skill: 应恒返回 Ok(false), 且不创建 dest_dir(与其它形态"目标不存在"的
+	// 语义一致, 供 JsonMcpAdapter::supports 依据该形态把 Skill 能力如实汇报为 false)
+	#[test]
+	fn none_export_skill_always_reports_false_and_creates_no_dest_dir() {
+		let dir = tempdir().unwrap();
+		let target = SkillTarget::None;
+		let dest = dir.path().join("exported/demo-skill");
+
+		let ok = target
+			.export_skill(dir.path(), "demo-skill", &dest)
+			.unwrap();
+
+		assert!(!ok);
+		assert!(!dest.exists(), "不应创建 dest_dir");
 	}
 }

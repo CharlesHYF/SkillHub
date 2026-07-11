@@ -1,5 +1,7 @@
 // 文件作用: Agent 领域类型 —— AgentKind/AgentScope 枚举与检测态实体(DetectedAgent/McpServerDef/
-//           SkillRef/ActualState), 提供与 agent 表 INTEGER 列的互转(见 migrations/0001_init.sql)
+//           SkillRef/ActualState), 提供与 agent 表 INTEGER 列的互转(见 migrations/0001_init.sql)。
+//           本任务追加 CodeBuddy(10, 纯 MCP, 见 SkillTarget::None)与 WorkBuddy(11, MCP+Skill
+//           俱全)两款腾讯 AI 工具, 均追加在末尾, 不改动既有 9 款的判别值。
 // 创建日期: 2026-07-09
 
 use std::collections::BTreeMap;
@@ -8,7 +10,8 @@ use serde::{Deserialize, Serialize};
 
 /// AI 工具种类: 对应 agent.agent_kind 列
 /// 1-ClaudeCode, 2-ClaudeDesktop, 3-Cursor, 4-Windsurf, 5-Cline, 6-VsCode, 7-GeminiCli, 8-Codex,
-/// 9-Hermes(M5 Task B1 追加, 追加在末尾, 不改动既有 8 款的判别值)
+/// 9-Hermes(M5 Task B1 追加), 10-CodeBuddy, 11-WorkBuddy(本任务追加, 均追加在末尾, 不改动既有
+/// 9 款的判别值)
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AgentKind {
 	ClaudeCode,
@@ -20,6 +23,8 @@ pub enum AgentKind {
 	GeminiCli,
 	Codex,
 	Hermes,
+	CodeBuddy,
+	WorkBuddy,
 }
 
 impl AgentKind {
@@ -35,6 +40,8 @@ impl AgentKind {
 			AgentKind::GeminiCli => 7,
 			AgentKind::Codex => 8,
 			AgentKind::Hermes => 9,
+			AgentKind::CodeBuddy => 10,
+			AgentKind::WorkBuddy => 11,
 		}
 	}
 
@@ -50,6 +57,8 @@ impl AgentKind {
 			AgentKind::GeminiCli => "Gemini CLI",
 			AgentKind::Codex => "Codex",
 			AgentKind::Hermes => "Hermes",
+			AgentKind::CodeBuddy => "CodeBuddy",
+			AgentKind::WorkBuddy => "WorkBuddy",
 		}
 	}
 
@@ -66,6 +75,8 @@ impl AgentKind {
 			7 => AgentKind::GeminiCli,
 			8 => AgentKind::Codex,
 			9 => AgentKind::Hermes,
+			10 => AgentKind::CodeBuddy,
+			11 => AgentKind::WorkBuddy,
 			_ => AgentKind::ClaudeCode,
 		}
 	}
@@ -140,7 +151,7 @@ pub struct ActualState {
 mod tests {
 	use super::*;
 
-	const ALL_KINDS: [AgentKind; 9] = [
+	const ALL_KINDS: [AgentKind; 11] = [
 		AgentKind::ClaudeCode,
 		AgentKind::ClaudeDesktop,
 		AgentKind::Cursor,
@@ -150,11 +161,14 @@ mod tests {
 		AgentKind::GeminiCli,
 		AgentKind::Codex,
 		AgentKind::Hermes,
+		AgentKind::CodeBuddy,
+		AgentKind::WorkBuddy,
 	];
 
-	// AgentKind: 9 个已知编码应与枚举变体精确往返(code -> from_code -> 原变体)
+	// AgentKind: 11 个已知编码应与枚举变体精确往返(code -> from_code -> 原变体), 含本任务
+	// 追加的 CodeBuddy(10)/WorkBuddy(11)
 	#[test]
-	fn agent_kind_code_round_trips_all_nine_variants() {
+	fn agent_kind_code_round_trips_all_eleven_variants() {
 		for (idx, kind) in ALL_KINDS.iter().enumerate() {
 			let expected_code = (idx + 1) as i64;
 			assert_eq!(kind.code(), expected_code);
