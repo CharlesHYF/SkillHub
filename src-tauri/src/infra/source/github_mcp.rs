@@ -62,19 +62,45 @@ impl GithubMcpProvider {
 	pub fn with_base_url(repos: Vec<RepoRef>, base_url: String) -> Self {
 		Self { repos, base_url }
 	}
+
+	/// 测试专用只读访问器: 暴露 repos 列表供单测直接断言默认仓库配置(如 Default 聚合了哪些
+	/// 仓库), 不发起任何网络请求。仅在 cfg(test) 下编译, 不进入生产二进制的公开 API
+	#[cfg(test)]
+	fn repos(&self) -> &[RepoRef] {
+		&self.repos
+	}
 }
 
 impl Default for GithubMcpProvider {
-	/// 默认聚合官方 MCP 服务器合集仓库(modelcontextprotocol/servers, main 分支, servers_dir=
-	/// "src"; 已用真实 GitHub API 核实该仓库当前下含 everything/fetch/filesystem/git/memory/
-	/// sequentialthinking/time 共 7 个参考实现子目录)
+	/// 默认聚合两个已用真实 GitHub API 核实存在且 servers_dir="src"结构兼容的 MCP 服务器合集
+	/// 仓库(M6 市场元数据富化任务新增第二个, 呼应 Charles"数据太少"的反馈, 提升可发现的 MCP
+	/// 服务器数量):
+	/// - modelcontextprotocol/servers(main 分支; 核实含 everything/fetch/filesystem/git/
+	///   memory/sequentialthinking/time 共 7 个参考实现子目录)
+	/// - awslabs/mcp(main 分支; 核实 src/ 下含数十个 amazon-*/aws-* 开头的子目录, 每个对应一个
+	///   独立 MCP 服务器, 如 aws-documentation-mcp-server/amazon-kendra-index-mcp-server 等)
+	///
+	/// 关于限流: 本源对 servers_dir 下每个子目录都要发起 1-2 次内容请求(package.json/
+	/// README.md)以归一化元数据, 属于既有架构(见文件头注释), 非本次新增; 新增 awslabs/mcp 后
+	/// 子目录总数显著增加, 匿名场景(60 次/时)大概率不足以在一次刷新内跑完两个仓库的全量子
+	/// 目录, 建议连接 GitHub 账号(services::market::fetch_all 已支持透传令牌)提额至 5000 次/时。
+	/// 本 Default 新增的只是每仓库一次的 fetch_repo_meta 调用(见其文档), 不改变这一既有的
+	/// 逐子目录调用架构
 	fn default() -> Self {
-		Self::new(vec![RepoRef {
-			owner: "modelcontextprotocol".to_string(),
-			repo: "servers".to_string(),
-			branch: "main".to_string(),
-			servers_dir: "src".to_string(),
-		}])
+		Self::new(vec![
+			RepoRef {
+				owner: "modelcontextprotocol".to_string(),
+				repo: "servers".to_string(),
+				branch: "main".to_string(),
+				servers_dir: "src".to_string(),
+			},
+			RepoRef {
+				owner: "awslabs".to_string(),
+				repo: "mcp".to_string(),
+				branch: "main".to_string(),
+				servers_dir: "src".to_string(),
+			},
+		])
 	}
 }
 
@@ -140,6 +166,34 @@ impl GithubCtx<'_> {
 		let bytes = BASE64_STANDARD.decode(cleaned).ok()?;
 		Some(String::from_utf8_lossy(&bytes).into_owned())
 	}
+
+	/// 拉取本仓库的星标数与最后一次 push 时间(GitHub repos API `GET /repos/{owner}/{repo}`);
+	/// 每个仓库在一次 search 里只调用一次, 供 search 施于该仓库下产出的全部 MarketResource,
+	/// 而不是逐资源调用, 呼应"匿名限流 60 次/时, 严禁逐资源调用把额度打爆"的约束(与
+	/// github_skills::GithubCtx::fetch_repo_meta 同一惯例, 各自模块独立维护一份)。请求失败
+	/// (网络错误/限流/非 2xx)时把 Err 交回调用方, 由调用方 unwrap_or_default() 兜底为
+	/// stars=0/pushed_at=空串(不劣于富化前"恒为 0/空串"的既有行为)
+	async fn fetch_repo_meta(&self) -> Result<RepoMeta> {
+		let url = format!("{}/repos/{}/{}", self.base_url, self.owner, self.repo);
+		match get_json::<RepoMeta>(self.client, &url, self.token, None).await? {
+			HttpResult::Ok { data, .. } => Ok(data),
+			HttpResult::NotModified => anyhow::bail!("意外的 304(本调用未传 etag): {url}"),
+		}
+	}
+}
+
+/// GitHub repos API 单次仓库详情响应的归一化视图, 只取本任务需要的两个字段; 与
+/// github_skills::RepoMeta 同构, 各自模块独立维护一份(体量小, 不值得跨层共享)。派生 Default
+/// 供 fetch_repo_meta 失败时由调用方 unwrap_or_default() 优雅降级
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+struct RepoMeta {
+	/// 仓库星标数, 落库到 MarketResource.stars, 施于该仓库下的全部资源
+	#[serde(default, rename = "stargazers_count")]
+	stars: i64,
+	/// 仓库最后一次 push 时间(ISO 8601), 落库到 MarketResource.updated_at, 施于该仓库下的
+	/// 全部资源
+	#[serde(default, rename = "pushed_at")]
+	pushed_at: String,
 }
 
 /// package.json 里我们关心的三个字段, 均可缺省(部分服务器用 Python 等非 npm 生态实现, 没有
@@ -295,7 +349,14 @@ impl SourceProvider for GithubMcpProvider {
 	/// MCP 服务器候选(不要求任何特定文件存在); 尝试读取其 package.json(取 name/description/
 	/// version)与 README.md(取描述兜底 + 示例配置提示), 归一化为 MarketResource。关键字/分类
 	/// 过滤留给聚合层(services::market, Task 6), 本方法恒返回全量, query 参数暂未使用(签名与
-	/// 其它源统一)
+	/// 其它源统一)。
+	///
+	/// M6 市场元数据富化: 每个仓库在列出 servers_dir 之外额外发起一次 fetch_repo_meta(仓库级,
+	/// 不随子目录数量线性增长), 把返回的星标数/最后 push 时间施于该仓库下产出的全部资源
+	/// (stars/updated_at); 该调用失败(限流/网络错误)时优雅降级为 0/空串, 不影响本仓库其余
+	/// 资源的正常产出。category 留空: 已核实本源可读取的 package.json(如 modelcontextprotocol/
+	/// servers 的 filesystem 服务器)通常不含 keywords 等可映射分类的结构化字段, 无可靠来源,
+	/// 如实留空不臆造, 与 mcp_registry 同一取舍
 	async fn search(
 		&self,
 		client: &Client,
@@ -312,6 +373,7 @@ impl SourceProvider for GithubMcpProvider {
 				git_ref: &repo_ref.branch,
 				token,
 			};
+			let repo_meta = ctx.fetch_repo_meta().await.unwrap_or_default();
 			let entries = ctx
 				.list_contents(&repo_ref.servers_dir)
 				.await
@@ -369,12 +431,12 @@ impl SourceProvider for GithubMcpProvider {
 					description,
 					author: repo_ref.owner.clone(),
 					version,
-					stars: 0,
+					stars: repo_meta.stars,
 					category: String::new(),
 					tags: Vec::new(),
 					auth_required: false,
 					install_manifest,
-					updated_at: String::new(),
+					updated_at: repo_meta.pushed_at.clone(),
 				});
 			}
 		}
@@ -616,6 +678,95 @@ mod tests {
 					url: None,
 				}
 			}
+		);
+	}
+
+	// search: 应对每个仓库只调用一次 repos API(GET /repos/{owner}/{repo})取星标数与最后 push
+	// 时间, 并把同一份仓库级元数据施于该仓库下产出的全部资源(foo/bar 两条), 而不是逐资源分别
+	// 请求; 呼应"匿名限流 60 次/时, 严禁逐资源调用把额度打爆"的约束
+	#[tokio::test]
+	async fn search_enriches_stars_and_updated_at_from_repo_level_metadata() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.and(path("/repos/acme/mcp-collection"))
+			.respond_with(ResponseTemplate::new(200).set_body_json(json!({
+				"stargazers_count": 654,
+				"pushed_at": "2026-04-01T00:00:00Z",
+			})))
+			.mount(&server)
+			.await;
+		Mock::given(method("GET"))
+			.and(path("/repos/acme/mcp-collection/contents/src"))
+			.respond_with(ResponseTemplate::new(200).set_body_json(json!([
+				{"name": "foo", "path": "src/foo", "type": "dir"},
+				{"name": "bar", "path": "src/bar", "type": "dir"},
+			])))
+			.mount(&server)
+			.await;
+		// 故意不 mount foo/bar 各自的 package.json/README.md, 全走默认 404, 只关注本测试要验证
+		// 的仓库级 stars/updated_at 是否正确施于两条资源
+
+		let provider = GithubMcpProvider::with_base_url(vec![sample_repo_ref()], server.uri());
+		let resources = provider
+			.search(&client(), &sample_query(), None)
+			.await
+			.unwrap();
+
+		assert_eq!(resources.len(), 2);
+		for resource in &resources {
+			assert_eq!(resource.stars, 654, "仓库级星标数应施于该仓库下的全部资源");
+			assert_eq!(
+				resource.updated_at, "2026-04-01T00:00:00Z",
+				"仓库级 push 时间应施于该仓库下的全部资源"
+			);
+		}
+	}
+
+	// search: 仓库级元数据请求失败(本测试故意不 mount /repos/acme/mcp-collection, 走 wiremock
+	// 默认 404)时应优雅降级为 stars=0/updated_at=空串, 不 panic 也不让整次 search 失败, 不劣于
+	// 富化前"恒为 0/空串"的既有行为
+	#[tokio::test]
+	async fn search_defaults_stars_and_updated_at_when_repo_meta_fetch_fails() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.and(path("/repos/acme/mcp-collection/contents/src"))
+			.respond_with(ResponseTemplate::new(200).set_body_json(json!([
+				{"name": "foo", "path": "src/foo", "type": "dir"},
+			])))
+			.mount(&server)
+			.await;
+		// 故意不 mount /repos/acme/mcp-collection, 模拟仓库级元数据请求失败(如限流)
+
+		let provider = GithubMcpProvider::with_base_url(vec![sample_repo_ref()], server.uri());
+		let resources = provider
+			.search(&client(), &sample_query(), None)
+			.await
+			.unwrap();
+
+		assert_eq!(resources.len(), 1, "仓库级元数据失败不应连累资源列表本身");
+		assert_eq!(resources[0].stars, 0);
+		assert_eq!(resources[0].updated_at, "");
+	}
+
+	// Default: 应聚合 modelcontextprotocol/servers 与 awslabs/mcp 两个仓库(均已实测核实真实
+	// 存在且 servers_dir="src" 结构兼容, 见 Default 文档), 提升可发现的 MCP 服务器数量; 纯结构
+	// 断言, 不发起任何网络请求
+	#[test]
+	fn default_aggregates_both_known_mcp_collection_repos() {
+		let provider = GithubMcpProvider::default();
+		let repos = provider.repos();
+		assert_eq!(repos.len(), 2);
+		assert!(repos
+			.iter()
+			.any(|r| r.owner == "modelcontextprotocol" && r.repo == "servers"));
+		assert!(repos
+			.iter()
+			.any(|r| r.owner == "awslabs" && r.repo == "mcp"));
+		assert!(
+			repos
+				.iter()
+				.all(|r| r.servers_dir == "src" && r.branch == "main"),
+			"两个仓库均应用 main 分支 + servers_dir=src 的既有约定"
 		);
 	}
 

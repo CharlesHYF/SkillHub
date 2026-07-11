@@ -9,9 +9,9 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use async_trait::async_trait;
-use reqwest::Client;
+use reqwest::{Client, Url};
 use serde_json::Value;
 
 use crate::domain::agent::McpServerDef;
@@ -24,6 +24,15 @@ use super::{AuthKind, InstallPayload, SourceProvider};
 /// 生产环境默认的官方 MCP Registry 根地址; 测试通过 McpRegistryProvider::with_base_url 注入
 /// wiremock 本地地址, 绝不在测试里打真实 registry.modelcontextprotocol.io
 const DEFAULT_BASE_URL: &str = "https://registry.modelcontextprotocol.io";
+
+/// 单页最多请求条数: 取官方 openapi.yaml 声明的 limit 参数上限(已核实 `maximum: 100`), 尽量
+/// 减少翻页次数
+const PAGE_LIMIT: u32 = 100;
+
+/// M6 市场元数据富化任务新增: 最多翻页次数。100/页 * 5 页 = 至多 500 条(呼应任务要求"设合理
+/// 上限, 如 5 页/若干百条"), 覆盖当前 registry 收录量级; 同时是一个硬上限, 防止响应异常(如
+/// nextCursor 恒非空)导致的死循环翻页
+const MAX_PAGES: u32 = 5;
 
 /// mcp_registry 市场源: 拉取官方 MCP Registry 的 server 列表并归一化。完全公开只读
 /// (见 auth_kind), search 恒发起匿名请求, 不转发调用方传入的 token(即便非 None)
@@ -57,28 +66,36 @@ impl SourceProvider for McpRegistryProvider {
 		SourceId::McpRegistry
 	}
 
-	/// 拉取 v0/servers 首页(游标分页暂只取首页, 足够 MVP 浏览; 真正的"翻下一页"留待后续任务
-	/// 按需接入响应里的 metadata.nextCursor), 把 servers 数组逐条归一化为 MarketResource。
-	/// 本源完全公开, 不转发调用方传入的 token(即便非 None 也恒发匿名请求, 见结构体文档);
-	/// query 参数交由聚合层做过滤(与 github_skills 同一惯例), 本方法恒返回首页全量
+	/// M6 市场元数据富化任务前: 游标分页只取首页, 足够 MVP 浏览; 本任务按 nextCursor 持续
+	/// 翻页, 最多 MAX_PAGES 页(每页 PAGE_LIMIT 条, 见两常量文档), 把各页 servers 数组拼接后逐条
+	/// 归一化为 MarketResource, 提升可发现的 MCP 服务器数量。本源完全公开, 不转发调用方传入的
+	/// token(即便非 None 也恒发匿名请求, 见结构体文档); query 参数交由聚合层做过滤(与
+	/// github_skills 同一惯例), 本方法恒返回(至多 MAX_PAGES 页范围内的)全量。
+	///
+	/// 关于 stars/category: 已核实官方 server.schema.json 与实际响应均不含热度/下载量/分类
+	/// 字段, 无可靠来源可映射, 如实留空/留 0(见 normalize_server_entry), 不臆造
 	async fn search(
 		&self,
 		client: &Client,
 		_query: &Query,
 		_token: Option<&str>,
 	) -> Result<Vec<MarketResource>> {
-		let url = format!("{}/v0/servers", self.base_url);
-		let body = match get_json::<Value>(client, &url, None, None).await? {
-			HttpResult::Ok { data, .. } => data,
-			// 本调用未传 etag, 正常不会收到 304; 出现即视为异常, 报错而非静默兜底空列表
-			HttpResult::NotModified => anyhow::bail!("意外的 304(本调用未传 etag): {url}"),
-		};
-		let servers = body
-			.get("servers")
-			.and_then(Value::as_array)
-			.cloned()
-			.unwrap_or_default();
-		Ok(servers.iter().filter_map(normalize_server_entry).collect())
+		let mut all_servers = Vec::new();
+		let mut cursor: Option<String> = None;
+		for _ in 0..MAX_PAGES {
+			let (servers, next_cursor) =
+				fetch_servers_page(client, &self.base_url, cursor.as_deref()).await?;
+			all_servers.extend(servers);
+			if next_cursor.is_empty() {
+				// 官方 nextCursor 语义: 空串表示已到最后一页, 提前结束翻页(不必然凑满 MAX_PAGES)
+				break;
+			}
+			cursor = Some(next_cursor);
+		}
+		Ok(all_servers
+			.iter()
+			.filter_map(normalize_server_entry)
+			.collect())
 	}
 
 	/// mcp_registry 的安装清单在 search 阶段已组装完整(Mcp/McpTemplate 均直接内嵌 server_def),
@@ -106,6 +123,51 @@ impl SourceProvider for McpRegistryProvider {
 	fn auth_kind(&self) -> Option<AuthKind> {
 		None
 	}
+}
+
+/// 拼出 v0/servers 单页请求的完整 URL: limit 恒为 PAGE_LIMIT, cursor 非 None 时追加。官方游标
+/// 可能内嵌 '/'/':' 等字符(如实测所见 "pkg-name:1.0.0"), 借 reqwest::Url(即 url crate 的
+/// Url 类型)的 query_pairs_mut 做正确的百分号编码, 不手工拼接字符串(避免特殊字符拼出不合法
+/// URL 或被服务端误解析)
+fn build_servers_url(base_url: &str, cursor: Option<&str>) -> Result<String> {
+	let mut url = Url::parse(&format!("{base_url}/v0/servers"))
+		.with_context(|| format!("非法 base_url: {base_url}"))?;
+	{
+		let mut pairs = url.query_pairs_mut();
+		pairs.append_pair("limit", &PAGE_LIMIT.to_string());
+		if let Some(cursor) = cursor {
+			pairs.append_pair("cursor", cursor);
+		}
+	}
+	Ok(url.into())
+}
+
+/// 拉取 v0/servers 单页原始数据: 返回该页 servers 原始 JSON 数组与官方响应携带的 nextCursor
+/// (`metadata.nextCursor`, 空串表示已到最后一页, 见官方响应实测形状)。本源完全公开, 恒发匿名
+/// 请求(与既有 search 文档同一约定), 不传 etag(未接入增量刷新, 同既有惯例)
+async fn fetch_servers_page(
+	client: &Client,
+	base_url: &str,
+	cursor: Option<&str>,
+) -> Result<(Vec<Value>, String)> {
+	let url = build_servers_url(base_url, cursor)?;
+	let body = match get_json::<Value>(client, &url, None, None).await? {
+		HttpResult::Ok { data, .. } => data,
+		// 本调用未传 etag, 正常不会收到 304; 出现即视为异常, 报错而非静默兜底空列表
+		HttpResult::NotModified => anyhow::bail!("意外的 304(本调用未传 etag): {url}"),
+	};
+	let servers = body
+		.get("servers")
+		.and_then(Value::as_array)
+		.cloned()
+		.unwrap_or_default();
+	let next_cursor = body
+		.get("metadata")
+		.and_then(|meta| meta.get("nextCursor"))
+		.and_then(Value::as_str)
+		.unwrap_or_default()
+		.to_string();
+	Ok((servers, next_cursor))
 }
 
 /// 把响应体 servers 数组里的一条归一化为 MarketResource; 支持两种形状: 官方当前的
@@ -313,9 +375,12 @@ fn empty_server_def(name: &str) -> McpServerDef {
 
 #[cfg(test)]
 mod tests {
+	use std::sync::atomic::{AtomicUsize, Ordering};
+	use std::sync::Arc;
+
 	use serde_json::json;
 	use wiremock::matchers::{method, path};
-	use wiremock::{Mock, MockServer, ResponseTemplate};
+	use wiremock::{Mock, MockServer, Request, Respond, ResponseTemplate};
 
 	use super::*;
 	use crate::domain::market::SortBy;
@@ -329,6 +394,43 @@ mod tests {
 			sort: SortBy::Recommended,
 			page: 1,
 			page_size: 20,
+		}
+	}
+
+	/// 测试专用: 按调用次序依次返回构造时给定的一串 JSON 响应体(超出预设条数后重复最后一个),
+	/// 并用 Arc<AtomicUsize> 记录调用次数; 供分页相关测试验证"翻页确实按顺序发起了 N 次请求",
+	/// 且不依赖 wiremock 按 query 参数匹配多个重叠 Mock 时的优先级规则(本类型对全部请求一视同仁,
+	/// 只按调用次序分派响应体)。Clone 后共享同一份计数器(Arc 语义), 便于测试里克隆一份传给
+	/// respond_with(取走所有权), 自己留一份在断言里读 call_count()
+	#[derive(Clone)]
+	struct SequentialJsonResponder {
+		bodies: Arc<Vec<Value>>,
+		calls: Arc<AtomicUsize>,
+	}
+
+	impl SequentialJsonResponder {
+		fn new(bodies: Vec<Value>) -> Self {
+			Self {
+				bodies: Arc::new(bodies),
+				calls: Arc::new(AtomicUsize::new(0)),
+			}
+		}
+
+		/// 目前已被调用的次数(用于断言分页循环恰好发起了预期次数的请求, 未多请求也未少请求)
+		fn call_count(&self) -> usize {
+			self.calls.load(Ordering::SeqCst)
+		}
+	}
+
+	impl Respond for SequentialJsonResponder {
+		fn respond(&self, _request: &Request) -> ResponseTemplate {
+			let index = self.calls.fetch_add(1, Ordering::SeqCst);
+			let body = self.bodies.get(index).unwrap_or_else(|| {
+				self.bodies
+					.last()
+					.expect("SequentialJsonResponder 至少应预置一个响应体")
+			});
+			ResponseTemplate::new(200).set_body_json(body)
 		}
 	}
 
@@ -593,6 +695,79 @@ mod tests {
 			Some("npx".to_string()),
 			"缺 runtimeHint 时应按 registryType=npm 猜出 npx"
 		);
+	}
+
+	// search: 应按官方 nextCursor 持续翻页直至拿到空 cursor 为止, 把各页 servers 拼接后一并
+	// 归一化, 而非只取首页; 用自定义 Respond(按调用次序返回预设响应)验证翻页顺序, 不依赖
+	// wiremock 按 query 参数区分多个重叠 Mock 的匹配优先级规则
+	#[tokio::test]
+	async fn search_paginates_across_multiple_pages_until_cursor_exhausted() {
+		let server = MockServer::start().await;
+		let responder = SequentialJsonResponder::new(vec![
+			json!({
+				"servers": [{"server": {"name": "acme/page1-server", "version": "1.0.0"}}],
+				"metadata": {"nextCursor": "acme/page1-server:1.0.0", "count": 1}
+			}),
+			json!({
+				"servers": [{"server": {"name": "acme/page2-server", "version": "1.0.0"}}],
+				"metadata": {"nextCursor": "", "count": 1}
+			}),
+		]);
+		Mock::given(method("GET"))
+			.and(path("/v0/servers"))
+			.respond_with(responder.clone())
+			.mount(&server)
+			.await;
+
+		let provider = McpRegistryProvider::with_base_url(server.uri());
+		let resources = provider
+			.search(&client(), &sample_query(), None)
+			.await
+			.unwrap();
+
+		assert_eq!(resources.len(), 2, "应聚合两页的 servers, 而非只取首页");
+		let names: Vec<_> = resources.iter().map(|r| r.name.clone()).collect();
+		assert!(names.contains(&"acme/page1-server".to_string()));
+		assert!(names.contains(&"acme/page2-server".to_string()));
+		assert_eq!(
+			responder.call_count(),
+			2,
+			"第 2 页 nextCursor 为空后应停止, 恰好翻 2 页"
+		);
+	}
+
+	// search: nextCursor 恒非空(模拟异常响应)时应在 MAX_PAGES(5) 页后强制停止, 不无限翻页;
+	// 预置 6 页可用响应(每页都带非空 nextCursor), 验证第 6 页确实未被拉取
+	#[tokio::test]
+	async fn search_stops_at_max_pages_cap_when_cursor_never_empties() {
+		let server = MockServer::start().await;
+		let bodies: Vec<Value> = (0..6)
+			.map(|i| {
+				json!({
+					"servers": [{"server": {"name": format!("acme/server-{i}"), "version": "1.0.0"}}],
+					"metadata": {"nextCursor": format!("acme/server-{i}:1.0.0"), "count": 1}
+				})
+			})
+			.collect();
+		let responder = SequentialJsonResponder::new(bodies);
+		Mock::given(method("GET"))
+			.and(path("/v0/servers"))
+			.respond_with(responder.clone())
+			.mount(&server)
+			.await;
+
+		let provider = McpRegistryProvider::with_base_url(server.uri());
+		let resources = provider
+			.search(&client(), &sample_query(), None)
+			.await
+			.unwrap();
+
+		assert_eq!(
+			resources.len(),
+			5,
+			"nextCursor 恒非空也应在 MAX_PAGES(5) 页后停止, 不应吃到第 6 页"
+		);
+		assert_eq!(responder.call_count(), 5);
 	}
 
 	// fetch_payload: Mcp/McpTemplate 两种安装清单均应直接取出内嵌的 server_def 组装
