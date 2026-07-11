@@ -4,6 +4,8 @@
 //           加锁与错误转换见 commands::setting)
 // 创建日期: 2026-07-10
 
+use std::path::Path;
+
 use anyhow::Result;
 use rusqlite::Connection;
 
@@ -29,6 +31,28 @@ pub fn save(conn: &Connection, s: &Settings) -> Result<Settings> {
 		repo_setting::upsert(conn, &cfg_key, &cfg_value)?;
 	}
 	get_all(conn)
+}
+
+/// 读取设置, 并把"空的存储目录"回填为应用数据目录(data_dir)下的默认位置后返回; 若发生回填
+/// (原本为空)则一并持久化, 使设置界面首次进入即展示真实默认目录而非空占位。空串在
+/// domain::setting 里语义为"用默认位置", 但用户看不到也无法基于它编辑, 故命令层拿得到 data_dir
+/// 时解析成真实 skills/mcp 子目录填好保存(见 Charles 反馈: 目录按默认值填写保存)。幂等: 已填好
+/// (非空)后再次调用不再改动/落库; 用户显式设过的目录也不会被覆盖
+pub fn get_all_with_default_dirs(conn: &Connection, data_dir: &Path) -> Result<Settings> {
+	let mut settings = get_all(conn)?;
+	let mut changed = false;
+	if settings.storage_skill_dir.is_empty() {
+		settings.storage_skill_dir = data_dir.join("skills").to_string_lossy().into_owned();
+		changed = true;
+	}
+	if settings.storage_mcp_dir.is_empty() {
+		settings.storage_mcp_dir = data_dir.join("mcp").to_string_lossy().into_owned();
+		changed = true;
+	}
+	if changed {
+		save(conn, &settings)?;
+	}
+	Ok(settings)
 }
 
 #[cfg(test)]
@@ -93,5 +117,42 @@ mod tests {
 
 		let rows = repo_setting::list_all(&conn).unwrap();
 		assert_eq!(rows.len(), 12, "12 个键各只应有一行, 不因重复保存产生多行");
+	}
+
+	// get_all_with_default_dirs: 空存储目录应回填为 data_dir/skills、data_dir/mcp 并持久化, 且幂等
+	#[test]
+	fn get_all_with_default_dirs_fills_empty_dirs_and_persists() {
+		let conn = setup_conn();
+		let data_dir = Path::new("/tmp/skillhub-data");
+
+		let filled = get_all_with_default_dirs(&conn, data_dir).unwrap();
+		assert_eq!(filled.storage_skill_dir, "/tmp/skillhub-data/skills");
+		assert_eq!(filled.storage_mcp_dir, "/tmp/skillhub-data/mcp");
+
+		// 已持久化: 直接 get_all 也应读到回填后的值(而非再次回落空串)
+		let reloaded = get_all(&conn).unwrap();
+		assert_eq!(reloaded.storage_skill_dir, "/tmp/skillhub-data/skills");
+		assert_eq!(reloaded.storage_mcp_dir, "/tmp/skillhub-data/mcp");
+
+		// 幂等: 已非空, 换个 data_dir 再调用也不应覆盖已填值
+		let again = get_all_with_default_dirs(&conn, Path::new("/other")).unwrap();
+		assert_eq!(again.storage_skill_dir, "/tmp/skillhub-data/skills");
+		assert_eq!(again.storage_mcp_dir, "/tmp/skillhub-data/mcp");
+	}
+
+	// get_all_with_default_dirs: 用户显式设过的目录不被"默认回填"覆盖
+	#[test]
+	fn get_all_with_default_dirs_keeps_user_set_dirs() {
+		let conn = setup_conn();
+		let user = Settings {
+			storage_skill_dir: "/my/custom/skills".to_string(),
+			storage_mcp_dir: "/my/custom/mcp".to_string(),
+			..Settings::default()
+		};
+		save(&conn, &user).unwrap();
+
+		let got = get_all_with_default_dirs(&conn, Path::new("/tmp/x")).unwrap();
+		assert_eq!(got.storage_skill_dir, "/my/custom/skills");
+		assert_eq!(got.storage_mcp_dir, "/my/custom/mcp");
 	}
 }
