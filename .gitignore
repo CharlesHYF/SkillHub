@@ -62,6 +62,8 @@ venv/
 .idea/
 .vscode/
 .claude/
+.github/
+.superpower/
 *.swp
 *.swo
 *~
@@ -78,3 +80,8 @@ Desktop.ini
 logs/
 *.tmp
 *.bak
+
+# --- 项目内部文档/资源(仅本地保留, 不公开入库) ---
+/DESIGN.md
+/OAUTH_SETUP.md
+/prototype/
