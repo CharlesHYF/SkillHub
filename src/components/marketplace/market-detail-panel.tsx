@@ -9,11 +9,12 @@ import { DetailPanel } from '@/components/common/detail-panel';
 import { TypeBadge } from '@/components/common/type-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { formatDateTime } from '@/lib/utils';
 import {
 	deriveAuthNotice,
 	deriveInstallRequirements,
 	formatStars,
+	formatUpdatedAt,
+	formatVersion,
 	toResourceKind,
 } from './market-display';
 
@@ -64,8 +65,8 @@ export function MarketDetailPanel({
 						/>
 					</span>
 					<span>
-						版本: v{resource.version || '-'} · 更新于:{' '}
-						{formatDateTime(resource.updatedAt)}
+						版本: {formatVersion(resource.version)} · 更新于:{' '}
+						{formatUpdatedAt(resource.updatedAt)}
 					</span>
 					<span className="inline-flex items-center gap-1">
 						<Star size={14} />

@@ -1,17 +1,25 @@
-// 文件作用: Sync Center 底部左侧"同步概览"面板 —— 选中 Agent 的基本信息 + 新增/更新/移除/
-//           待同步总计迷你统计 + 最后同步时间/上次结果/上次详情; 纯展示组件, diffCounts/
-//           lastOutcome 由 pages/sync-center 统一持有并计算
+// 文件作用: Sync Center 底部左侧"同步概览"面板 —— 选中 Agent 的基本信息(含可复制的配置路径) +
+//           新增/更新/移除/待同步总计迷你统计 + 最后同步时间/上次结果/上次详情; 纯展示组件,
+//           diffCounts/lastOutcome 由 pages/sync-center 统一持有并计算
 // 创建日期: 2026-07-09
-import { ListChecks, Minus, MousePointerClick, Plus, RefreshCw } from 'lucide-react';
+import { Copy, ListChecks, Minus, MousePointerClick, Plus, RefreshCw } from 'lucide-react';
 
 import type { AgentRow } from '@/api/agent';
 import type { SyncSummary } from '@/api/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/common/empty-state';
 import { SyncStatusBadge } from '@/components/common/sync-status-badge';
 import { StatCard } from '@/components/common/stat-card';
 import { formatRelativeTime } from '@/lib/utils';
 import { deriveAgentSyncStatus, lastResultLabel, type DiffCounts } from './agent-display';
+
+/** 复制配置路径到系统剪贴板; 剪贴板 API 在部分环境(如无权限/非安全上下文)可能不可用, 静默失败
+ * 即可, 不因此打断用户操作(与 installed/resource-detail-panel.copyToClipboard 同一约定, 两个
+ * feature 目录彼此独立各自保留一份轻量副本, 不做跨目录引用) */
+function copyToClipboard(text: string) {
+	void navigator.clipboard?.writeText(text).catch(() => {});
+}
 
 interface SyncOverviewCardProps {
 	/** 选中的 Agent; null 表示尚未选中任何 Agent */
@@ -49,12 +57,22 @@ export function SyncOverviewCard({ agent, diffCounts, lastOutcome }: SyncOvervie
 					/>
 				) : (
 					<>
-						<p
-							className="truncate text-xs text-muted-foreground"
-							title={agent.configPath}
-						>
-							{agent.configPath}
-						</p>
+						<div className="flex min-w-0 items-center gap-1">
+							<p
+								className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
+								title={agent.configPath}
+							>
+								{agent.configPath}
+							</p>
+							<Button
+								variant="ghost"
+								size="icon-sm"
+								aria-label="复制配置路径"
+								onClick={() => copyToClipboard(agent.configPath)}
+							>
+								<Copy size={14} />
+							</Button>
+						</div>
 						<div className="grid grid-cols-4 gap-3">
 							<StatCard icon={Plus} label="新增" value={diffCounts.add} />
 							<StatCard icon={RefreshCw} label="更新" value={diffCounts.update} />

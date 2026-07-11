@@ -14,6 +14,7 @@ import {
 	resourceImportLocal,
 	resourceSetEnabled,
 	resourceDelete,
+	libraryImportFromAgents,
 	type Resource,
 } from './library';
 
@@ -84,5 +85,12 @@ describe('library api', () => {
 	it('resourceDelete 以 command 名 resource_delete 调用并传 id', async () => {
 		await resourceDelete(1);
 		expect(vi.mocked(invoke)).toHaveBeenCalledWith('resource_delete', { id: 1 });
+	});
+
+	it('libraryImportFromAgents 以 command 名 library_import_from_agents 调用, 无入参, 并原样返回结果', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce({ imported: 2, skipped: 1, agents: 3 });
+		const outcome = await libraryImportFromAgents();
+		expect(outcome).toEqual({ imported: 2, skipped: 1, agents: 3 });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('library_import_from_agents');
 	});
 });

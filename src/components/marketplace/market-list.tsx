@@ -206,15 +206,19 @@ export function MarketList({
 				</DropdownMenu>
 			</div>
 
-			<div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-4 overflow-auto">
+			{/* 固定 grid-cols-2 在详情面板(w-90 固定宽)展开、挤占大半可用宽度时会把每张卡片压到
+			    远小于舒适阅读宽度, 导致卡片文字近乎逐字换行(实机窄窗反馈的具体症状); 改用
+			    auto-fill+minmax 按"每列至少 240px"自动决定列数——够宽时多列, 挤占后自动降到
+			    单列, 而不是死守 2 列硬撑 */}
+			<div className="grid min-h-0 flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4 overflow-auto">
 				{isLoading ? (
-					<SkeletonCards count={6} className="col-span-2" />
+					<SkeletonCards count={6} className="col-span-full" />
 				) : visibleItems.length === 0 ? (
 					<EmptyState
 						icon={SearchX}
 						title="暂无匹配的资源"
 						description="没有符合当前搜索或筛选条件的资源, 换个关键字或调整筛选再试试"
-						className="col-span-2"
+						className="col-span-full"
 					/>
 				) : (
 					visibleItems.map((item) => {

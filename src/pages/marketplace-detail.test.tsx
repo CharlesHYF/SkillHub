@@ -140,6 +140,17 @@ describe('MarketplaceDetail 页面', () => {
 		expect(screen.getByRole('button', { name: /收藏/ })).toBeInTheDocument();
 	});
 
+	it('version/category/updatedAt 为空字符串时应展示占位符 "—", 不展示裸 "v-"', async () => {
+		vi.mocked(marketDetail).mockResolvedValue(
+			makeResource({ version: '', category: '', updatedAt: '' }),
+		);
+		renderDetail(buildMarketDetailId(3, 'acme/mcp:github-sync-mcp'));
+
+		expect(await screen.findByText('github-sync-mcp')).toBeInTheDocument();
+		expect(screen.queryByText(/v-/)).not.toBeInTheDocument();
+		expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+	});
+
 	it('marketDetail 返回 null 时应展示资源不存在提示', async () => {
 		vi.mocked(marketDetail).mockResolvedValue(null);
 		renderDetail(buildMarketDetailId(1, 'acme/skills:missing'));

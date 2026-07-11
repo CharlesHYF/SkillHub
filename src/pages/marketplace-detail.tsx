@@ -20,7 +20,10 @@ import type { AuthAccount } from '@/api/auth';
 import { AuthModal } from '@/components/auth/auth-modal';
 import { INSTALL_PERMISSIONS } from '@/components/auth/auth-display';
 import {
+	formatCategory,
 	formatStars,
+	formatUpdatedAt,
+	formatVersion,
 	sourceTypeToCode,
 	toResourceKind,
 } from '@/components/marketplace/market-display';
@@ -28,7 +31,6 @@ import { TypeBadge } from '@/components/common/type-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatDateTime } from '@/lib/utils';
 
 const MARKET_DETAIL_KEY = 'market-detail';
 // 与 pages/marketplace.tsx 共享同一字面量, 安装成功后一并失效 Installed 页面的本地库列表查询
@@ -175,7 +177,9 @@ export default function MarketplaceDetail() {
 									<h2 className="text-xl font-semibold text-foreground">
 										{resource.name}
 									</h2>
-									<Badge variant="outline">v{resource.version || '-'}</Badge>
+									<Badge variant="outline">
+										{formatVersion(resource.version)}
+									</Badge>
 									<TypeBadge type={toResourceKind(resource.resType)} />
 									<span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
 										<Star size={14} />
@@ -190,10 +194,10 @@ export default function MarketplaceDetail() {
 
 						<div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
 							<InfoRow label="发布者" value={resource.author} />
-							<InfoRow label="类别" value={resource.category || '-'} />
+							<InfoRow label="类别" value={formatCategory(resource.category)} />
 							<InfoRow label="大小" value={NOT_AVAILABLE} />
 							<InfoRow label="下载量" value={NOT_AVAILABLE} />
-							<InfoRow label="最新更新" value={formatDateTime(resource.updatedAt)} />
+							<InfoRow label="最新更新" value={formatUpdatedAt(resource.updatedAt)} />
 							<InfoRow label="兼容性" value={NOT_AVAILABLE} />
 						</div>
 
@@ -205,10 +209,10 @@ export default function MarketplaceDetail() {
 								<ul className="flex flex-col gap-2 text-sm">
 									<li className="flex items-center justify-between">
 										<span className="font-medium text-foreground">
-											v{resource.version || '-'}(当前)
+											{formatVersion(resource.version)}(当前)
 										</span>
 										<span className="text-muted-foreground">
-											{formatDateTime(resource.updatedAt)}
+											{formatUpdatedAt(resource.updatedAt)}
 										</span>
 									</li>
 								</ul>

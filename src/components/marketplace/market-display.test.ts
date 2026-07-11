@@ -6,6 +6,9 @@ import {
 	sourceTypeToCode,
 	toResourceKind,
 	formatStars,
+	formatVersion,
+	formatUpdatedAt,
+	formatCategory,
 	deriveInstallRequirements,
 	deriveAuthNotice,
 	marketResourceKey,
@@ -62,6 +65,36 @@ describe('formatStars', () => {
 	it('大于等于 100 万时用 m 后缀', () => {
 		expect(formatStars(1_000_000)).toBe('1m');
 		expect(formatStars(2_500_000)).toBe('2.5m');
+	});
+});
+
+describe('formatVersion', () => {
+	it('有版本号时应加 v 前缀', () => {
+		expect(formatVersion('1.2.0')).toBe('v1.2.0');
+	});
+
+	it('空版本号时应展示占位符, 不展示裸 "v-"', () => {
+		expect(formatVersion('')).toBe('—');
+	});
+});
+
+describe('formatUpdatedAt', () => {
+	it('有值时应复用 formatDateTime 裁剪到分钟精度', () => {
+		expect(formatUpdatedAt('2026-07-01 12:30:00')).toBe('2026-07-01 12:30');
+	});
+
+	it('空值时应展示占位符, 不展示"更新于: "后拖一段空白', () => {
+		expect(formatUpdatedAt('')).toBe('—');
+	});
+});
+
+describe('formatCategory', () => {
+	it('有值时原样展示', () => {
+		expect(formatCategory('productivity')).toBe('productivity');
+	});
+
+	it('空值时应展示占位符', () => {
+		expect(formatCategory('')).toBe('—');
 	});
 });
 
