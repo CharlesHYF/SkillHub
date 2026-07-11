@@ -53,6 +53,17 @@ describe('MarketDetailPanel', () => {
 		expect(screen.getByText('图表')).toBeInTheDocument();
 	});
 
+	it('version/updatedAt 为空字符串时应展示占位符 "—", 不展示裸 "v-" 或"更新于: "空白', () => {
+		render(
+			<MarketDetailPanel
+				{...baseProps}
+				resource={makeMarketResource({ version: '', updatedAt: '' })}
+			/>,
+		);
+		expect(screen.queryByText(/v-/)).not.toBeInTheDocument();
+		expect(screen.getByText('版本: — · 更新于: —')).toBeInTheDocument();
+	});
+
 	it('应展示兼容 Agent 区块的占位说明(当前领域模型未提供逐项兼容性数据)', () => {
 		render(<MarketDetailPanel {...baseProps} resource={makeMarketResource()} />);
 		expect(screen.getByText('兼容 Agent')).toBeInTheDocument();

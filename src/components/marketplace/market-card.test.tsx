@@ -91,6 +91,13 @@ describe('MarketCard', () => {
 		expect(onSelect).not.toHaveBeenCalled();
 	});
 
+	// 卡片根元素是 <div>(非原生可点元素)但绑了 onClick(打开详情), 必须带 cursor-pointer,
+	// 否则真实浏览器里鼠标悬停不会显示手型指针(实机反馈同类问题的回归锁定)
+	it('卡片根元素应带 cursor-pointer', () => {
+		render(<MarketCard {...baseProps} resource={makeMarketResource()} />);
+		expect(screen.getByText('data-visualizer').closest('.cursor-pointer')).not.toBeNull();
+	});
+
 	it('selected 为真时卡片应带 data-state=selected', () => {
 		const resource = makeMarketResource();
 		render(<MarketCard {...baseProps} resource={resource} selected />);
@@ -98,6 +105,12 @@ describe('MarketCard', () => {
 			'data-state',
 			'selected',
 		);
+	});
+
+	it('version 为空字符串时应展示占位符 "—", 不展示裸 "v-"', () => {
+		render(<MarketCard {...baseProps} resource={makeMarketResource({ version: '' })} />);
+		expect(screen.queryByText('v-')).not.toBeInTheDocument();
+		expect(screen.getByText('—')).toBeInTheDocument();
 	});
 
 	it('installError 非空时应展示该错误文案', () => {

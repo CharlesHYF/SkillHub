@@ -60,3 +60,18 @@ export async function resourceSetEnabled(id: number, enabled: boolean): Promise<
 export async function resourceDelete(id: number): Promise<void> {
 	return invoke('resource_delete', { id });
 }
+
+/** library_import_from_agents 结果: imported 为本次新导入的资源条数, skipped 为已存在故跳过的
+ * 条数, agents 为本次扫描到的 Agent 数; 与后端 BE-2 契约一致(camelCase) */
+export interface ImportFromAgentsOutcome {
+	imported: number;
+	skipped: number;
+	agents: number;
+}
+
+/** 反向扫描本机各已探测 Agent 的配置, 把"Agent 里已装但本地库尚未收录"的 Skill/MCP 导入为本地库
+ * 资源; 供 App.tsx 启动自动初始化调用(fire-and-forget), 成功后调用方应失效本地库列表与首页概览
+ * 两处 Query(见 App.tsx 文档注释) */
+export async function libraryImportFromAgents(): Promise<ImportFromAgentsOutcome> {
+	return invoke<ImportFromAgentsOutcome>('library_import_from_agents');
+}

@@ -6,7 +6,7 @@ import { BadgeCheck, Sparkles, Plug, Star } from 'lucide-react';
 import type { MarketResource } from '@/api/market';
 import { TypeBadge } from '@/components/common/type-badge';
 import { Button } from '@/components/ui/button';
-import { formatStars, toResourceKind } from './market-display';
+import { formatStars, formatVersion, toResourceKind } from './market-display';
 
 interface MarketCardProps {
 	resource: MarketResource;
@@ -74,7 +74,7 @@ export function MarketCard({
 						aria-label="已认证市场源"
 					/>
 				</span>
-				<span className="shrink-0">v{resource.version || '-'}</span>
+				<span className="shrink-0">{formatVersion(resource.version)}</span>
 			</div>
 
 			<div className="flex items-center justify-between gap-2">

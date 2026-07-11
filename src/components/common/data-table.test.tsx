@@ -43,4 +43,16 @@ describe('DataTable', () => {
 		fireEvent.click(screen.getByText('Beta'));
 		expect(onRowClick).toHaveBeenCalledWith(rows[1]);
 	});
+
+	// 行本身是 <tr>(非原生可点元素), 提供 onRowClick 时必须补 cursor-pointer, 否则真实浏览器里
+	// 鼠标悬停不会显示手型指针, 用户不知道该行可点(实机窄窗/交互反馈同类问题的回归锁定)
+	it('提供 onRowClick 时行应带 cursor-pointer, 未提供时不应带', () => {
+		const { rerender } = render(
+			<DataTable columns={columns} rows={rows} rowKey={(r) => r.id} onRowClick={vi.fn()} />,
+		);
+		expect(screen.getByText('Alpha').closest('tr')).toHaveClass('cursor-pointer');
+
+		rerender(<DataTable columns={columns} rows={rows} rowKey={(r) => r.id} />);
+		expect(screen.getByText('Alpha').closest('tr')).not.toHaveClass('cursor-pointer');
+	});
 });

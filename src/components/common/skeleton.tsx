@@ -73,13 +73,18 @@ interface SkeletonCardsProps {
 	className?: string;
 }
 
-/** 卡片网格骨架: count 张卡片占位(外形近似 MarketCard), 贴合 Marketplace 卡片网格区 */
+/** 卡片网格骨架: count 张卡片占位(外形近似 MarketCard), 贴合 Marketplace 卡片网格区; 列数规则
+ * 与 marketplace/market-list.tsx 的实际卡片网格保持一致(auto-fill+minmax, 每列至少 240px 按
+ * 可用宽度自动降列), 避免加载态与加载完成后的实际内容列数对不上而"跳一下" */
 export function SkeletonCards({ count = 4, className }: SkeletonCardsProps) {
 	return (
 		<div
 			role="status"
 			aria-label="加载中"
-			className={cn('grid auto-rows-min grid-cols-2 gap-4', className)}
+			className={cn(
+				'grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4',
+				className,
+			)}
 		>
 			{Array.from({ length: count }).map((_, i) => (
 				<div key={i} className="flex flex-col gap-3 rounded-lg border p-4">

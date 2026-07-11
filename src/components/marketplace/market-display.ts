@@ -1,10 +1,15 @@
-// 文件作用: Marketplace 展示态的派生逻辑(来源编码互转/类型徽标映射/星标数格式化/安装要求/
-//           认证说明), 供 market-card/market-list/market-detail-panel 与 pages/marketplace 共用,
-//           避免同一套映射写多份
+// 文件作用: Marketplace 展示态的派生逻辑(来源编码互转/类型徽标映射/星标数格式化/版本号·更新
+//           时间·分类的空值占位/安装要求/认证说明), 供 market-card/market-list/
+//           market-detail-panel 与 pages/marketplace(-detail) 共用, 避免同一套映射写多份
 // 创建日期: 2026-07-10
 import type { InstallManifest, MarketResource, MarketSourceType } from '@/api/market';
 import type { McpServerDef } from '@/api/sync';
 import type { ResourceKind } from '@/components/common/type-badge';
+import { formatDateTime } from '@/lib/utils';
+
+/** 字段值缺失时的统一占位符: 用全角破折号而非裸 "-", 与 DESIGN.md"状态齐全"原则一致, 避免各处
+ * 各写一种空值占位 */
+const EMPTY_PLACEHOLDER = '—';
 
 /** 市场资源来源编码, 与后端 domain::market::SourceId 的 i64 互转约定一一对应
  * (1-GithubSkills, 2-McpRegistry, 3-GithubMcp) */
@@ -48,6 +53,23 @@ export function formatStars(stars: number): string {
 		return `${trimTrailingZero(stars / 1000)}k`;
 	}
 	return String(stars);
+}
+
+/** 版本号展示格式化: 有值时加 "v" 前缀, 空值(BE-1 尚未回填或来源本身缺失)时统一展示占位符,
+ * 不展示裸 "v-" 这类半成品文案(实机反馈的具体症状) */
+export function formatVersion(version: string): string {
+	return version ? `v${version}` : EMPTY_PLACEHOLDER;
+}
+
+/** 更新时间展示格式化: 空值时统一展示占位符, 不展示"更新于: "后面拖一段空白;
+ * 非空时复用 lib/utils.formatDateTime 的既有裁剪规则 */
+export function formatUpdatedAt(updatedAt: string): string {
+	return updatedAt ? formatDateTime(updatedAt) : EMPTY_PLACEHOLDER;
+}
+
+/** 分类展示格式化: 空值时统一展示占位符 */
+export function formatCategory(category: string): string {
+	return category || EMPTY_PLACEHOLDER;
 }
 
 /** 由 McpServerDef 派生安装要求展示行: 有本地启动命令则展示命令+参数, 有远程地址则展示地址
