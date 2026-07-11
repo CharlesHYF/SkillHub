@@ -1,6 +1,7 @@
 # --- 编译与构建 ---
 target/
 dist/
+dist-ssr/
 build/
 out/
 *.class
@@ -14,31 +15,66 @@ node_modules/
 .pnpm-store/
 vendor/
 
+# --- 前端(Vite / React / TypeScript) ---
+*.local
+.vite/
+.cache/
+*.tsbuildinfo
+coverage/
+.nyc_output/
+*.lcov
+
+# --- Node 日志 ---
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Rust / Cargo ---
+# 注: 目标目录由上方 target/ 统一忽略; Cargo.lock 为应用程序需提交, 不忽略
+**/*.rs.bk
+*.pdb
+
+# --- Tauri ---
+# gen/ 为自动生成(能力 schema / 移动端工程), 不入库; 打包产物在 target/ 下已忽略
+src-tauri/gen/
+src-tauri/WixTools/
+
 # --- Python ---
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
 venv/
-.env
 
 # --- Go ---
 *.test
 *.out
 
-# --- 环境与 IDE ---
+# --- 环境变量(密钥不入库; 保留示例文件) ---
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# --- 编辑器 / 工具 ---
 .idea/
 .vscode/
 .claude/
 *.swp
 *.swo
 *~
-.DS_Store
-Thumbs.db
 
-# --- 日志 ---
+# --- 操作系统 ---
+.DS_Store
+._*
+.AppleDouble
+Thumbs.db
+Desktop.ini
+
+# --- 日志与临时文件 ---
 *.log
 logs/
-
-# --- Tauri ---
-src-tauri/gen/
+*.tmp
+*.bak
