@@ -1,20 +1,26 @@
 // 文件作用: 资源中心右侧详情面板 —— 图标/名称/类型徽标/作者+认证标记/版本/更新时间/星标数、
-//           简介、标签、兼容 Agent(占位)、安装要求、认证与授权说明、下载并安装操作; 纯展示 +
-//           回调, 数据获取/选中态/安装 mutation 由 pages/marketplace 统一持有
+//           简介、标签、兼容 Agent(占位)、安装要求、认证与授权说明、下载并安装 + 查看详情操作;
+//           纯展示 + 回调, 数据获取/选中态/安装 mutation 由 pages/marketplace 统一持有。
+//           M5 起还原原型第 2 屏底部两个按钮: "下载并安装"(直接安装, 既有)+ "查看详情"(新增,
+//           跳到 pages/marketplace-detail 的 /marketplace/:id 完整详情页——该页已有的版本历史/
+//           安装步骤/认证弹窗等更完整信息, 复用其已导出的 buildMarketDetailId 构造链接)
 // 创建日期: 2026-07-10
 import { BadgeCheck, Sparkles, Plug, Star, ShieldCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 import type { MarketResource } from '@/api/market';
 import { DetailPanel } from '@/components/common/detail-panel';
 import { TypeBadge } from '@/components/common/type-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { buildMarketDetailId } from '@/pages/marketplace-detail';
 import {
 	deriveAuthNotice,
 	deriveInstallRequirements,
 	formatStars,
 	formatUpdatedAt,
 	formatVersion,
+	sourceTypeToCode,
 	toResourceKind,
 } from './market-display';
 
@@ -132,6 +138,17 @@ export function MarketDetailPanel({
 					) : null}
 					<Button onClick={() => onDownload(resource)} disabled={isInstalling}>
 						{isInstalling ? '安装中...' : '下载并安装'}
+					</Button>
+					{/* 还原原型: 主按钮下方的次级"查看详情", 跳到 /marketplace/:id 完整详情页(该页
+					    信息更全, 也是 AUTH_REQUIRED 走认证弹窗重试安装的入口); Link 渲染为原生
+					    <a>, 语义上是"跳转"而非"操作", 故用 asChild 合并 Button 的视觉样式而不
+					    改变其可达性角色 */}
+					<Button variant="outline" asChild>
+						<Link
+							to={`/marketplace/${buildMarketDetailId(sourceTypeToCode(resource.sourceType), resource.extId)}`}
+						>
+							查看详情
+						</Link>
 					</Button>
 				</div>
 			</div>

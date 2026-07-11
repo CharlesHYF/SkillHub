@@ -36,7 +36,10 @@ export function MarketCard({
 		<div
 			data-state={selected ? 'selected' : undefined}
 			onClick={() => onSelect(resource)}
-			className="flex cursor-pointer flex-col gap-3 rounded-lg border p-4 shadow-xs transition-[transform,box-shadow,border-color,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
+			// min-w-0 不可省略: 卡片是两列 grid 的 grid item, grid item 默认 min-width:auto(不
+			// 缩小到低于内容固有最小宽度), 名称/描述等一长, 就会把列撑宽进而挤压甚至溢出整个网格
+			// (与 components/layout/app-shell.tsx 的 min-w-0 注释同一原理)
+			className="flex min-w-0 cursor-pointer flex-col gap-3 rounded-lg border p-4 shadow-xs transition-[transform,box-shadow,border-color,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 motion-reduce:transition-none motion-reduce:hover:translate-y-0"
 			style={{
 				borderColor: selected ? 'var(--sh-brand)' : 'var(--sh-border)',
 				background: selected ? 'var(--sh-brand-tint)' : 'var(--sh-surface)',

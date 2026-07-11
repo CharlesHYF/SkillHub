@@ -1,7 +1,7 @@
 // 文件作用: Settings 页面集成测试(mock src/api/setting、src/api/auth 与 src/lib/dialog) ——
 //           五个分区渲染、切换开关/修改超时改变本地态、保存更改携带完整 Settings、恢复默认回到
-//           硬编码默认值、账号区登录/退出对应 auth api、脏态下保存按钮可用性、存储目录两个"浏览"
-//           按钮接原生目录对话框(pickDirectory)
+//           硬编码默认值(存储目录两项例外: 保留已加载值, 不清空为空串)、账号区登录/退出对应
+//           auth api、脏态下保存按钮可用性、存储目录两个"浏览"按钮接原生目录对话框(pickDirectory)
 // 创建日期: 2026-07-10
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
@@ -195,6 +195,29 @@ describe('Settings 页面', () => {
 		expect(screen.getByLabelText('请求超时(秒)')).toHaveValue(defaultSettings.netTimeoutSec);
 		expect(screen.getByRole('switch', { name: '仅同步已启用项' })).not.toBeChecked();
 		expect(screen.getByRole('radio', { name: 'Stable (稳定版)' })).toBeChecked();
+		expect(screen.getByRole('button', { name: '保存更改' })).toBeEnabled();
+	});
+
+	// 存储目录两项是本次任务的例外: 后端 settings_get 起已回填真实默认目录并持久化(空则填
+	// data_dir/skills·mcp, 见 commit 319be75), "恢复默认"如果仍把这两项清成硬编码空串, 用户会
+	// 看到目录被清空这一明显倒退, 故这两项应保留 settingsGet 已加载到的值, 与上面这条"其余字段
+	// 回到硬编码默认值"的用例刻意区分开、各自独立断言, 避免同一条用例里出现相互矛盾的期望
+	it('点击"恢复默认"应保留当前已加载的存储目录值, 不清空为硬编码空串', async () => {
+		const user = userEvent.setup();
+		renderSettings();
+		await waitFor(() =>
+			expect(screen.getByLabelText('本地 Skill 目录')).toHaveValue(
+				loadedSettings.storageSkillDir,
+			),
+		);
+
+		await user.click(screen.getByRole('button', { name: '恢复默认' }));
+
+		expect(screen.getByLabelText('本地 Skill 目录')).toHaveValue(
+			loadedSettings.storageSkillDir,
+		);
+		expect(screen.getByLabelText('本地 MCP 目录')).toHaveValue(loadedSettings.storageMcpDir);
+		// 其余字段确实被重置为与已加载设置不同的硬编码默认值, 保存按钮应仍可用
 		expect(screen.getByRole('button', { name: '保存更改' })).toBeEnabled();
 	});
 
