@@ -2,6 +2,7 @@
 //           新增/更新/移除/待同步总计迷你统计 + 最后同步时间/上次结果/上次详情; 纯展示组件,
 //           diffCounts/lastOutcome 由 pages/sync-center 统一持有并计算
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { Copy, ListChecks, Minus, MousePointerClick, Plus, RefreshCw } from 'lucide-react';
 
 import type { AgentRespVO } from '@/api/agent';

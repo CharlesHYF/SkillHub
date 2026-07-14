@@ -1,6 +1,7 @@
 // 文件作用: agent 表仓储 —— upsert/list/get, 显式列名/禁 SELECT */全参数化查询
 //           (阿里巴巴泰山版数据库规约), 探测结果按 uk_agent_kind_path 冲突更新落库
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;

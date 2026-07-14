@@ -4,6 +4,7 @@
 //           变为"真实生效"), 以及带 Bearer 鉴权与 ETag 增量刷新(If-None-Match/304)的 JSON GET
 //           封装, 供 M2 市场三源聚合(github_skills/mcp_registry/github_mcp)与 OAuth 令牌交换复用
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::time::Duration;
 

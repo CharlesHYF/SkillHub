@@ -2,6 +2,7 @@
 //           探测转调 services::sync::detect_all, 列表是对 repo_agent::list 的直接透传
 //           (无额外业务逻辑, 命令层不再绕经 services 一层)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use tauri::State;
 

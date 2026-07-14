@@ -24,6 +24,7 @@
 //           是二者的组合, 供不受 Send 约束的调用方使用, 命令层(commands::market::market_install)
 //           同样改为三段式(查详情持锁 -> 异步拉取不持锁 -> 落库持锁)调用, 不使用 install 本身。
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 use std::fs;

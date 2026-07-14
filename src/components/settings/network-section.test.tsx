@@ -1,5 +1,6 @@
 // 文件作用: NetworkSection 组件单测(代理模式下拉/三个地址输入/超时数字输入的渲染与回调)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

@@ -5,6 +5,7 @@
 //           pages/marketplace-detail 定位需要弹出 AuthModal(components/auth/auth-modal)完成
 //           认证的 provider
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { invoke } from '@tauri-apps/api/core';
 
 import type { ResourceRespVO, ResourceType } from './library';

@@ -1,6 +1,7 @@
 // 文件作用: 资源中心卡片 —— 图标/名称/类型徽标/描述/作者+认证标记/版本/星标数/查看详情与下载
 //           操作; 纯展示 + 回调, 数据获取/选中态/安装 mutation 由 pages/marketplace 统一持有
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { BadgeCheck, Sparkles, Plug, Star } from 'lucide-react';
 
 import type { MarketResourceRespVO } from '@/api/market';

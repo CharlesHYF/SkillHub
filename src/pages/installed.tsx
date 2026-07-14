@@ -4,6 +4,7 @@
 //           M5 Task F2: 移除 F1 遗留的手动"刷新"按钮, 三处数据源(资源库/关联/Agent 列表)改由
 //           实时保鲜策略(见 lib/query.ts)自动刷新, 与其余屏一致; 资源表加载中用骨架屏
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 

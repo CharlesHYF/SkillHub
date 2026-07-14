@@ -1,6 +1,7 @@
 // 文件作用: 全局 UI 态(zustand) —— 选中资源/Agent、类型与关键字筛选、选中的市场资源标识,
 //           供 Installed/Sync Center/Marketplace 等屏共享
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { create } from 'zustand';
 
 /** 资源类型筛选; undefined 表示不筛选(全部) */

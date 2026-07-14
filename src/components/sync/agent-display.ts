@@ -2,6 +2,7 @@
 //           在线状态徽标取值、diff 计划按 action 分组统计与过滤, 供 sync-center 页面与其子组件
 //           (agent-table/sync-overview-card/diff-detail-panel)共用, 避免同一套映射写多份
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import type { AgentKind, AgentRespVO } from '@/api/agent';
 import type { DiffAction, DiffItem, DiffPlanRespVO, SyncSummaryRespVO } from '@/api/sync';
 import type { SyncStatus } from '@/components/common/sync-status-badge';

@@ -1,6 +1,7 @@
 // 文件作用: MarketDetailPanel 渲染与交互单测(字段展示/标签/兼容 Agent 占位/安装要求/认证说明/
 //           下载并安装与关闭回调/安装错误提示/安装中态/"查看详情"跳转链接)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import type { ReactElement } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';

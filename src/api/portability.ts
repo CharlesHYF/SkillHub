@@ -3,6 +3,7 @@
 //           ManifestRespVO 字段形状取自 M3 计划 Task 1(domain::portability::ManifestRespVO, camelCase
 //           序列化); ImportOutcomeRespVO 与后端 domain::portability::ImportOutcomeRespVO 逐字段对齐(见类型注释)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { invoke } from '@tauri-apps/api/core';
 
 /** 导出目标文件格式: 1 zip / 2 json / 3 tar */

@@ -1,5 +1,6 @@
 // 文件作用: 已安装界面资源展示派生逻辑单测(来源文案/描述兜底/类型与状态映射)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import type { ResourceRespVO } from '@/api/library';
 import {

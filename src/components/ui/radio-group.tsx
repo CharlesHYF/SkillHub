@@ -2,6 +2,7 @@
 //           基元的数据槽/语义色桥接约定手写, 选中态选择器用 Radix 实际会写入的 data-state, 不手改
 //           radix-ui 内部逻辑, 仅做外层样式包装)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import * as React from 'react';
 import { RadioGroup as RadioGroupPrimitive } from 'radix-ui';
 

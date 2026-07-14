@@ -1,5 +1,6 @@
 // 文件作用: 全局 UI 态 store 单测(选中态/筛选态的读写与复位)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useUiStore } from './ui';
 

@@ -5,6 +5,7 @@
 //           "AUTH_REQUIRED:<provider>" 错误触发, 打开 AuthModal 完成认证后自动重试安装, 成功后
 //           提示已安装并可跳转已安装页
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

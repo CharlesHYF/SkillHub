@@ -12,6 +12,7 @@
 //           ClaudeSkillsDir(".hermes/skills"), 与 Claude 家族同一套目录形态(构造实参见
 //           adapter::mod::all_adapters 内 Hermes 条目)。
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 use std::fs;

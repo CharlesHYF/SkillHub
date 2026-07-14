@@ -3,6 +3,7 @@
 //           待同步/最后同步时间/操作); 纯展示 + 回调, 数据获取/mutation/进度事件由
 //           pages/sync-center 统一持有, 与 components/installed/resource-list 的分层方式一致
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { useState } from 'react';
 import { Eye, Monitor, MoreVertical, RefreshCw, RotateCcw, SquareCheck, Zap } from 'lucide-react';
 

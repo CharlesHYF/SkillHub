@@ -7,6 +7,7 @@
 //           呼应 domain::portability 里 BundleFormat/Scope/ConflictStrategy::from_i64 对
 //           "未知/脏数据一律兜底为合法默认值"的既有取舍
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use serde::{Deserialize, Serialize};
 

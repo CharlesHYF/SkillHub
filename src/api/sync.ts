@@ -1,5 +1,6 @@
 // 文件作用: 同步相关 Tauri command 的类型化封装 + 同步进度事件("sync://progress")订阅
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 

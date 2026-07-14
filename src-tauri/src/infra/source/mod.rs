@@ -2,6 +2,7 @@
 //           AuthKind(市场源要求的认证类型)、InstallPayload/FileEntry(fetch_payload 的产物形状),
 //           以及 all_sources 全量源注册表。三源(github_skills/mcp_registry/github_mcp)均已注册
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 pub mod github_mcp;
 pub mod github_skills;

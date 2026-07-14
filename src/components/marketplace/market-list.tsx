@@ -2,6 +2,7 @@
 //           最近更新) + 分类下拉 + 结果计数 + 排序下拉 + 卡片网格(MarketCard) + 分页; 纯展示 +
 //           回调, 查询态(关键字/分段/分类/排序/分页)与安装 mutation 由 pages/marketplace 统一持有
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { Fragment } from 'react';
 import { Search, ChevronDown, ChevronLeft, ChevronRight, SearchX } from 'lucide-react';
 

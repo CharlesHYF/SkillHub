@@ -4,6 +4,7 @@
 //           services::sync::diff_for_agent(Task 7c)构造 domain::sync::reconcile 的
 //           managed 安全边界参数
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeSet;
 

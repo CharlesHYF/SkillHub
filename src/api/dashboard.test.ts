@@ -1,5 +1,6 @@
 // 文件作用: dashboard api 层单测
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 

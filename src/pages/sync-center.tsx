@@ -7,6 +7,7 @@
 //           M5 Task F1: 移除手动"刷新"按钮, 改为挂载时自动探测一次 Agent, 之后 Agent 列表/
 //           在线态靠 refetchInterval 保鲜(见 lib/query.ts)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, ListTodo, Users, Wifi } from 'lucide-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';

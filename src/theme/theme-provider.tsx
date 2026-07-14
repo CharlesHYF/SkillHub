@@ -1,5 +1,6 @@
 // 文件作用: 亮暗主题 Provider, 读系统偏好并在根元素打 data-theme
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 
 type Theme = 'light' | 'dark';

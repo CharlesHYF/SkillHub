@@ -3,6 +3,7 @@
 //           纯展示 + onChange(patch), 数据由 pages/settings 统一持有(与 export-panel 的
 //           options/onOptionsChange 同一惯例)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { Repeat } from 'lucide-react';
 
 import type { SettingRespVO } from '@/api/setting';

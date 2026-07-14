@@ -11,6 +11,7 @@
 //           SkillTarget::None(纯 MCP, supports(Skill)=false); WorkBuddy 的 Skill(.workbuddy/
 //           skills)与 MCP(.workbuddy/mcp.json)均已核实, 按 ClaudeSkillsDir 形态正常接入。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 pub mod codex;
 pub mod hermes;

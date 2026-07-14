@@ -2,6 +2,7 @@
 //           的 TokenSet/PkceChallenge(令牌只进系统钥匙串, 见 migrations/0001_init.sql
 //           auth_account 表注释与 infra::repo_auth)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use serde::{Deserialize, Serialize};
 

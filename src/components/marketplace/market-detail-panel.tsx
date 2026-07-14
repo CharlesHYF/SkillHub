@@ -5,6 +5,7 @@
 //           跳到 pages/marketplace-detail 的 /marketplace/:id 完整详情页——该页已有的版本历史/
 //           安装步骤/认证弹窗等更完整信息, 复用其已导出的 buildMarketDetailId 构造链接)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { BadgeCheck, Sparkles, Plug, Star, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 

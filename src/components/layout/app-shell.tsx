@@ -1,5 +1,6 @@
 // 文件作用: 应用外壳(侧栏 + 内容区), 不含技术栈页脚
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { Outlet } from 'react-router-dom';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Sidebar } from './sidebar';

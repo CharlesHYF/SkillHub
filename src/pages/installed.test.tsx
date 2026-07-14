@@ -1,6 +1,7 @@
 // 文件作用: Installed 页面集成测试(mock src/api) —— 表格渲染/行选中开面板/卸载确认流程/
 //           同步到全部 Agent 只对在线 Agent 生效
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

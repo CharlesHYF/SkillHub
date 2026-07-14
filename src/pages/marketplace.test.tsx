@@ -5,6 +5,7 @@
 //           详情面板展示空态(M5 Task F2)。MarketDetailPanel 内新增的"查看详情"链接依赖 Router
 //           语境, 故 renderMarketplace 经 MemoryRouter 包裹
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

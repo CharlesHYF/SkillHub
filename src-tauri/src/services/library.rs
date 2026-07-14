@@ -5,6 +5,7 @@
 //           运行时, 便于单测注入内存库/临时目录; 命令层(commands::library, Task 8)负责加锁
 //           取出 conn/data_dir 后转调本模块, 呼应 services::sync 既有的分层约定。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::fs;
 use std::path::Path;

@@ -3,6 +3,7 @@
 //           的双重挂载模拟下仍只各触发一次(不形成重复触发循环), 修复此前"进入即空, 必须先手动点
 //           刷新"的问题(M5 Task F1)以及"Agent 里已装但本地库看不到"的问题(M6)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';

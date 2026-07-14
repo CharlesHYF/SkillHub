@@ -1,6 +1,7 @@
 // 文件作用: Sync Center 展示态派生逻辑单测(类型本地/远程归类、可同步判定、在线状态徽标、
 //           diff 计划按 action 分组统计、按 action 过滤)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import type { AgentKind, AgentRespVO } from '@/api/agent';
 import type { DiffItem, DiffPlanRespVO, SyncSummaryRespVO } from '@/api/sync';

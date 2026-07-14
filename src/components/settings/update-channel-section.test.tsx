@@ -1,5 +1,6 @@
 // 文件作用: UpdateChannelSection 组件单测(Stable/Beta 单选渲染与切换回调)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

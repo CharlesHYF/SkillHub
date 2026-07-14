@@ -1,6 +1,7 @@
 // 文件作用: 已安装界面资源展示态的派生逻辑(来源文案/描述兜底/类型与同步状态映射),
 //           供 resource-list/resource-detail-panel 两处共用, 避免同一套映射写两遍
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import type { ResourceRespVO, ResourceType, SourceType } from '@/api/library';
 import type { ResourceKind } from '@/components/common/type-badge';
 import type { SyncStatus } from '@/components/common/sync-status-badge';

@@ -1,5 +1,6 @@
 // 文件作用: ResourceDetailPanel 渲染与交互单测(字段展示/关联 Agent 列表/底部动作回调)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { ResourceRespVO } from '@/api/library';

@@ -1,5 +1,6 @@
 // 文件作用: SyncOverviewCard 渲染单测(未选中空态/选中后概览计数与上次同步结果展示/配置路径可复制)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import type { AgentRespVO } from '@/api/agent';

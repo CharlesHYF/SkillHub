@@ -1,6 +1,7 @@
 // 文件作用: resource 表仓储 —— insert/list/get/update_meta/set_enabled/delete/count_by_type,
 //           显式列名/禁 SELECT */全参数化查询(阿里巴巴泰山版数据库规约)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use rusqlite::{named_params, params, Connection, OptionalExtension, Row};
 

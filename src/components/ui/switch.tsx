@@ -1,6 +1,7 @@
 // 文件作用: 开关基元(手写补齐, CLI registry 未含此组件; 参照同目录 RadioGroup 的手写惯例——选中态
 //           选择器用 Radix 实际会写入的 data-state, 不手改 radix-ui 内部逻辑, 仅做外层样式包装)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import * as React from 'react';
 import { Switch as SwitchPrimitive } from 'radix-ui';
 

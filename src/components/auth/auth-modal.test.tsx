@@ -2,6 +2,7 @@
 //           各自调用 authLogin、令牌录入展开与提交调用 authEnterToken、defaultProvider 为 Token
 //           时自动展开令牌输入区、认证成功回调 onAuthenticated、失败态展示错误提示、取消关闭
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

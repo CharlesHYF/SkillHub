@@ -1,6 +1,7 @@
 // 文件作用: 应用根组件(装配 Provider 与路由 + 启动时自动初始化 Agent 探测/市场缓存/从已装
 //           Agent 反向导入本地库)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { useEffect, useRef } from 'react';
 import { RouterProvider, createHashRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

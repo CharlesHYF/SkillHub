@@ -3,6 +3,7 @@
 //           以及纯函数 reconcile(比较期望态与某 Agent 实际态, 产出待应用的差异计划), 供
 //           infra::adapter::AgentAdapter::apply(Task 7b)与 services::sync 编排(Task 7c)使用。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeSet;
 

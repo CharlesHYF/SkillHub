@@ -1,5 +1,6 @@
 // 文件作用: ImportPanel 组件单测(拖拽/文本路径输入 -> 预览渲染 -> 冲突策略/自动同步 -> 开始导入)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

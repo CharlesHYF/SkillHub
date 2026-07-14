@@ -3,6 +3,7 @@
 //           (含无真实字段的合理占位)、下载并安装成功态、market_install 因 AUTH_REQUIRED 失败时
 //           打开 AuthModal 并在认证成功后自动重试安装(GitHub 与令牌两条路径)、返回 Marketplace
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

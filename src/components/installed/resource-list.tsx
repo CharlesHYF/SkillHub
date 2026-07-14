@@ -2,6 +2,7 @@
 //           (占位) + 资源表(DataTable) + 分页; 纯展示 + 回调, 数据获取/选中态由 pages/installed
 //           统一持有(便于本组件单测无需接入真实 Tauri/Query 环境)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { useEffect, useState, Fragment } from 'react';
 import {
 	Search,

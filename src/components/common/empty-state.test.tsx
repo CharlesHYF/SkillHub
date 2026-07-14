@@ -1,5 +1,6 @@
 // 文件作用: EmptyState 渲染单测(标题/说明/图标/自动保鲜提示/行动区/尺寸变体)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Inbox } from 'lucide-react';

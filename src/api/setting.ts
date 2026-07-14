@@ -2,6 +2,7 @@
 //           (settings_save)、读取应用版本号(app_version)。SettingRespVO 字段形状与后端
 //           domain::setting::SettingRespVO 逐字段对齐(serde camelCase 序列化, 字段顺序无关)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { invoke } from '@tauri-apps/api/core';
 
 /** 网络代理模式: 0 系统默认 / 1 不使用 / 2 手动 */

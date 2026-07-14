@@ -3,6 +3,7 @@
 //           硬编码默认值(存储目录两项例外: 保留已加载值, 不清空为空串)、账号区登录/退出对应
 //           auth api、脏态下保存按钮可用性、存储目录两个"浏览"按钮接原生目录对话框(pickDirectory)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

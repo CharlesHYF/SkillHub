@@ -3,6 +3,7 @@
 //           完整记录整份序列化进 raw_json 供还原(见 migrations/0001_init.sql market_cache
 //           表注释)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use rusqlite::{named_params, params, Connection, OptionalExtension, Row};
 

@@ -2,6 +2,7 @@
 //           原型截图第 7 屏一致, 供 network-section/update-channel-section 共用, 避免同一套
 //           文案写多份(与 portability/impexp-display 同一惯例)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 /** 单个可选项: value 供 Select/RadioGroup 绑定(二者的值本身都是字符串, 由调用方转换), label/
  * description 供展示(与 portability/impexp-display 的 RadioOption 同一形状, 就地定义避免

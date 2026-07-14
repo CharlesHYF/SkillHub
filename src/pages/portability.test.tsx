@@ -4,6 +4,7 @@
 //           impexpHistory 结果/"选择保存位置""选择文件"两个原生对话框入口/不再渲染手动"刷新"
 //           按钮(M5 Task F1: 历史列表改由 refetchInterval 等策略自动保鲜)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

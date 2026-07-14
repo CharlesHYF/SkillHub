@@ -3,6 +3,7 @@
 //           (无网络 I/O), 只负责加锁取出 conn 与错误类型转换(anyhow::Error -> String, 与
 //           commands::portability 等既有命令同一惯例), 具体逻辑见 services::setting
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use tauri::State;
 

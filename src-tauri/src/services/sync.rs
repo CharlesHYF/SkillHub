@@ -5,6 +5,7 @@
 //           &Connection 与 &Path(home), 不直接摸 AppState, 便于单测注入内存库/临时目录;
 //           命令层(Task 8)负责加锁取出 conn/home 后转调本模块, 本模块不关心 Tauri 运行时。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 use std::fs;

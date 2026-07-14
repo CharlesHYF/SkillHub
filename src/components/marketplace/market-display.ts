@@ -2,6 +2,7 @@
 //           时间·分类的空值占位/安装要求/认证说明), 供 market-card/market-list/
 //           market-detail-panel 与 pages/marketplace(-detail) 共用, 避免同一套映射写多份
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import type { InstallManifest, MarketResourceRespVO, MarketSourceType } from '@/api/market';
 import type { McpServerDef } from '@/api/sync';
 import type { ResourceKind } from '@/components/common/type-badge';

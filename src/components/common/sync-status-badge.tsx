@@ -1,5 +1,6 @@
 // 文件作用: 同步状态徽标, 语义色只落在小圆点+文字上, 徽标底色/边框保持中性(见 DESIGN.md)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 

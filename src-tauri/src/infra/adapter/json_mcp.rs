@@ -10,6 +10,7 @@
 //           构造时传入 SkillTarget::None 占位, supports() 据此把 Skill 能力如实汇报为 false
 //           (见下方 supports 实现), 不再对"是否支持 Skill"一律写死为 true。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 use std::fs;

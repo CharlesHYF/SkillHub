@@ -1,5 +1,6 @@
 // 文件作用: 资源类型徽标(Skill/MCP), 中性描边 + 图标 + 文案区分, 不做高饱和撞色(见 DESIGN.md)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { Sparkles, Plug, type LucideIcon } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';

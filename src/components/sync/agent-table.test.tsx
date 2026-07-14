@@ -1,5 +1,6 @@
 // 文件作用: AgentTable 渲染与交互单测(行渲染/工具条批量同步/行内菜单/选中态/同步中禁用)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

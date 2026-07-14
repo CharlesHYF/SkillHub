@@ -1,6 +1,7 @@
 // 文件作用: 已安装界面右侧详情面板 —— 选中资源的完整信息 + 关联 Agent + 底部动作;
 //           纯展示 + 回调, 数据获取/选中态/mutation 由 pages/installed 统一持有
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { Copy, Sparkles, Plug } from 'lucide-react';
 
 import type { ResourceRespVO } from '@/api/library';

@@ -2,6 +2,7 @@
 //           差异面板/一键同步触发 sync_apply 并随 onSyncProgress 事件更新进度/完成后失效刷新/
 //           挂载时自动触发 agent_detect(M5 Task F1: 已移除手动"刷新"按钮)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

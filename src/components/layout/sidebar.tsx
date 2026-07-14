@@ -1,5 +1,6 @@
 // 文件作用: 侧栏导航(品牌标 + 6 导航项), 高亮当前路由
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Box } from 'lucide-react';

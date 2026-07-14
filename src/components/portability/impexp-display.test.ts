@@ -1,5 +1,6 @@
 // 文件作用: 导入导出展示态派生逻辑单测(状态码/方向码映射 + 可选项文案)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import {
 	IMPEXP_STATUS_LABEL,

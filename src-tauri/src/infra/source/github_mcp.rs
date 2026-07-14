@@ -11,6 +11,7 @@
 //           目录本身即视为一个合法的 MCP 服务器候选(不像 github_skills 要求 SKILL.md 必须存在),
 //           缺失 package.json/README.md 时相关字段宽松兜底为空/猜测值, 不跳过该目录
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 

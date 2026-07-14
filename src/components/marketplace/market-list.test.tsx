@@ -1,5 +1,6 @@
 // 文件作用: MarketList 渲染与交互单测(搜索/分段/筛选 chips/分类/排序/卡片网格/分页)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

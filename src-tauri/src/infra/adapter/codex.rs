@@ -8,6 +8,7 @@
 //           SkillTarget, Task 5/7b), Codex 映射到 InstructionsFile("AGENTS.md")(见
 //           adapter::mod::all_adapters)。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 use std::fs;

@@ -1,5 +1,6 @@
 // 文件作用: DiffDetailPanel 渲染与交互单测(空态/条目渲染/Tab 过滤计数)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

@@ -1,5 +1,6 @@
 // 文件作用: 右侧详情面板容器(标题栏 + 关闭按钮 + 内容插槽), 定位/显隐由调用方决定
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';

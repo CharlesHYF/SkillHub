@@ -6,6 +6,7 @@
 //           schema 有多个版本), 本文件全程用 serde_json::Value 逐字段安全提取, 不绑定强 schema,
 //           缺失字段一律宽松兜底, 避免真实数据里个别字段的变化拖垮整次 search
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 

@@ -2,6 +2,7 @@
 //           Beta(测试版)单选, 各带说明文案(措辞与原型截图一致); 纯展示 + onChange(patch), 数据
 //           由 pages/settings 统一持有(与 export-panel 的 options/onOptionsChange 同一惯例)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { GitBranch } from 'lucide-react';
 
 import type { SettingRespVO } from '@/api/setting';

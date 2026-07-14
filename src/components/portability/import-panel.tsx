@@ -5,6 +5,7 @@
 //           处理策略/导入后自动同步勾选、开始导入按钮; 纯展示 + 回调, 数据与提交由
 //           pages/portability 统一持有
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { useEffect, useState } from 'react';
 import { CircleHelp, CloudUpload, FolderOpen, Plug, Sparkles, Upload, Users } from 'lucide-react';
 import { getCurrentWebview } from '@tauri-apps/api/webview';

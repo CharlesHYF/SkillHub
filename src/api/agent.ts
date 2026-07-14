@@ -1,5 +1,6 @@
 // 文件作用: Agent(本机 AI 工具实例)相关 Tauri command 的类型化封装
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { invoke } from '@tauri-apps/api/core';
 
 /** Agent 种类, 与后端 AgentKind 枚举变体名一一对应 */

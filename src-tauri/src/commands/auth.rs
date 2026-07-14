@@ -8,6 +8,7 @@
 //           使这些设置对认证流程同样真实生效; 读设置与随后的网络 await 之间不跨锁, 与
 //           commands::market 的既有 Send 安全惯例一致
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

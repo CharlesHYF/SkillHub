@@ -2,6 +2,7 @@
 //           可选右侧操作区, 使六屏标题字号字重/留白节奏一致(见 DESIGN.md 排版层级)。此前六屏
 //           各自内联 <header><h1> 结构, 抽为组件后仅一处维护, 且天然承载副标题这一层级
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import type { ReactNode } from 'react';
 
 interface PageHeaderProps {

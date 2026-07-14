@@ -3,6 +3,7 @@
 //           authEnterToken); 展示授权后将允许 SkillHub 执行的权限说明清单。任一方式认证成功后
 //           把入库账号交回调用方(pages/marketplace-detail), 由调用方决定关闭弹窗并重试安装
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { useEffect, useState } from 'react';
 import { AppWindow, Check, Code2, Globe, KeyRound, Lock } from 'lucide-react';
 

@@ -1,6 +1,7 @@
 // 文件作用: Skeleton 及其组合(List/Table/Cards)渲染单测 —— 加载态以 role=status 暴露,
 //           组合按传入的行/列/张数渲染对应数量的占位块
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Skeleton, SkeletonList, SkeletonTable, SkeletonCards } from './skeleton';

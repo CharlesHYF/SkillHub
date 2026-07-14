@@ -3,6 +3,7 @@
 //           运行时, 呼应 services::portability/services::market 既有的分层约定(具体命令层
 //           加锁与错误转换见 commands::setting)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use std::path::Path;
 

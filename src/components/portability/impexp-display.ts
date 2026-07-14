@@ -2,6 +2,7 @@
 //           映射、导出范围/目标格式/导入冲突策略的可选项文案(措辞与原型截图第 6 屏一致), 供
 //           export-panel/import-panel/impexp-history-table 共用, 避免同一套映射写多份
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { Upload, Download, type LucideIcon } from 'lucide-react';
 import type { SyncStatus } from '@/components/common/sync-status-badge';
 

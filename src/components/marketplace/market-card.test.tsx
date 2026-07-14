@@ -1,5 +1,6 @@
 // 文件作用: MarketCard 渲染与交互单测(字段展示/类型徽标/选中态/查看详情与下载回调/安装错误提示)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

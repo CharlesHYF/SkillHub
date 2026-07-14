@@ -2,6 +2,7 @@
 //           安装清单、SortBy/Query 查询参数, 提供与 market_cache 表 INTEGER 列的 i64 互转
 //           (见 migrations/0001_init.sql market_cache 表注释)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use serde::{Deserialize, Serialize};
 

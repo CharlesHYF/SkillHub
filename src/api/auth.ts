@@ -3,6 +3,7 @@
 //           编码(1-GitHub, 2-Google, 3-Microsoft, 4-Token), 与 api/market.ts 的 sourceType/
 //           resType 同一"数值编码跨 IPC 边界"约定
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { invoke } from '@tauri-apps/api/core';
 
 /** 认证提供方, 与后端 domain::auth::ProviderKind 枚举变体名一一对应(该枚举未标

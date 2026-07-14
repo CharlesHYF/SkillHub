@@ -1,5 +1,6 @@
 // 文件作用: 路由表(7 条: 6 导航路由 + marketplace 详情子路由)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import type { RouteObject } from 'react-router-dom';
 import { AppShell } from './components/layout/app-shell';
 import Dashboard from './pages/dashboard';

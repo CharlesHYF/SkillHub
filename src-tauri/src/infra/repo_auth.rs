@@ -2,6 +2,7 @@
 //           全参数化查询(阿里巴巴泰山版数据库规约); 令牌密文绝不入库, keyring_ref 只是钥匙串
 //           条目引用键(见 migrations/0001_init.sql auth_account 表注释)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 

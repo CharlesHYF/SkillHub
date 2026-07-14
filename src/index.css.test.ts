@@ -4,6 +4,7 @@
 //           层声明, 需 !important 才能压过 Radix 菜单/下拉基元自带的 cursor-default 工具类)
 //           已经由 vite build 产物人工核对确认, 见 src/index.css 内联注释与本任务报告
 // 创建日期: 2026-07-11
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';

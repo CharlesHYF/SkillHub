@@ -2,6 +2,7 @@
 //           activity_recent、快速操作按钮点击各自导航到目标路由、同步状态概览渲染 agent_list、
 //           不再渲染手动"刷新"按钮(M5 Task F1: 三处数据源改由 refetchInterval 等策略自动保鲜)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

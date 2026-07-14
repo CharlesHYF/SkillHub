@@ -1,5 +1,6 @@
 // 文件作用: Tauri command 的类型化封装层(前端唯一调用后端的入口)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { invoke } from '@tauri-apps/api/core';
 
 /** 应用健康信息 */

@@ -8,6 +8,7 @@
 //           M5 Task F1: 移除手动"刷新"按钮, 历史列表改由 refetchInterval 等策略自动保鲜
 //           (见 lib/query.ts)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 

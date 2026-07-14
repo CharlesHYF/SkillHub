@@ -1,5 +1,6 @@
 // 文件作用: StatCard 渲染单测(label/value/hint 可见)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Box } from 'lucide-react';

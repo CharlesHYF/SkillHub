@@ -2,6 +2,7 @@
 //           Tab(全部/新增/更新/移除)按 DiffItem.action 分组过滤; 纯展示组件, diffPlan 的获取
 //           (sync_diff)由 pages/sync-center 统一持有
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { useState } from 'react';
 import { CheckCircle2, MousePointerClick } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';

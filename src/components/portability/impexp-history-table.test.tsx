@@ -1,5 +1,6 @@
 // 文件作用: ImpexpHistoryTable 组件单测(渲染历史行/空态)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import type { ImpexpRespVO } from '@/api/portability';

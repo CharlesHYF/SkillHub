@@ -1,6 +1,7 @@
 // 文件作用: 卸载资源前的二次确认弹窗; resource 为 null 表示关闭态, 由调用方(pages/installed)
 //           持有"待卸载资源"这一状态, 本组件只负责展示确认文案与转发确认/取消
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import type { ResourceRespVO } from '@/api/library';
 import { Button } from '@/components/ui/button';
 import {

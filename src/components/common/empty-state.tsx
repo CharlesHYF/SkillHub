@@ -3,6 +3,7 @@
 //           "状态齐全"原则)。size=default 用于整屏数据区, sm 用于面板内较小空态, 图标/间距/字号
 //           随之收敛, 保证六屏空态风格一致
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { Loader2 } from 'lucide-react';

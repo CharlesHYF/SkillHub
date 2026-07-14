@@ -5,6 +5,7 @@
 //           留在命令层, 不下沉进 services::sync(该模块按其文件头注释约定不摸 AppHandle/Tauri
 //           运行时, 只认 &Connection 与 &Path, 便于单测)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};

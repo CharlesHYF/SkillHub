@@ -5,6 +5,7 @@
 //           保证六屏加载态风格一致。脉冲动画尊重 prefers-reduced-motion(reduce 时不脉冲, 仍是
 //           占位块)。组合骨架以 role=status + aria-label 标注, 供无障碍读屏与测试识别加载态
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { cn } from '@/lib/utils';
 
 /** 单个骨架块: 中性轻染 + 脉冲; 尺寸由调用方经 className 决定 */

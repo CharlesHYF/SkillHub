@@ -5,6 +5,7 @@
 //           refetchInterval 等策略自动保鲜(见 lib/query.ts), 应用启动时的自动初始化(见
 //           App.tsx)也会在 Agent 探测成功后一并失效本页概览
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import type { LucideIcon } from 'lucide-react';
 import {
 	Download,

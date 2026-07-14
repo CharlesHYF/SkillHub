@@ -3,6 +3,7 @@
 //           本任务追加 CodeBuddy(10, 纯 MCP, 见 SkillTarget::None)与 WorkBuddy(11, MCP+Skill
 //           俱全)两款腾讯 AI 工具, 均追加在末尾, 不改动既有 9 款的判别值。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 

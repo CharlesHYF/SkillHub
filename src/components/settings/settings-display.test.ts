@@ -1,5 +1,6 @@
 // 文件作用: 设置(SettingRespVO)界面展示态可选项文案单测(措辞与原型截图第 7 屏一致)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import { PROXY_MODE_OPTIONS, UPDATE_CHANNEL_OPTIONS } from './settings-display';
 

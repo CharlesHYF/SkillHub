@@ -1,6 +1,7 @@
 // 文件作用: 首页/同步中心用的统计卡片(图标 + 标签 + 数值 + 可选说明); 可选 loading 态下
 //           数值/说明以骨架块占位, 避免首次加载时先闪一个 0 再跳到真实值
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import type { LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/common/skeleton';

@@ -1,6 +1,7 @@
 // 文件作用: 资源领域类型 —— ResourceType/SourceType 枚举与 ResourceRespVO 实体,
 //           提供与 resource 表 INTEGER 列的 i64 互转(见 migrations/0001_init.sql)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use serde::{Deserialize, Serialize};
 

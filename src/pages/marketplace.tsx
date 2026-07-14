@@ -9,6 +9,7 @@
 //           首次搜索结果非空且尚无选中项时自动选中第一条(见 hasAutoSelectedRef), 面板本身不再
 //           随"有无选中"整体消失, 无内容时改为在同一宽度容器内展示空态
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Info, PackageSearch, SearchX } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

@@ -1,5 +1,6 @@
 // 文件作用: 主题 Provider 单测
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { ThemeProvider, useTheme } from './theme-provider';

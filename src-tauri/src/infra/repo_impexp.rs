@@ -1,6 +1,7 @@
 // 文件作用: import_export_log 表仓储 —— 导入导出历史写入与最近记录查询(原型第 6 屏"导入导出历史"
 //           表格来源), 显式列名/禁 SELECT */全参数化查询(阿里巴巴泰山版数据库规约)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use rusqlite::{params, Connection, Row};
 use serde::Serialize;

@@ -2,6 +2,7 @@
 //           repo_*), 命令层(commands::dashboard, Task 8)加锁取出 conn 后转调本模块, 呼应
 //           services::sync/services::library 既有的分层约定
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use anyhow::Result;
 use rusqlite::Connection;
