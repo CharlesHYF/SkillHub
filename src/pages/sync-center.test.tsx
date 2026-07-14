@@ -6,8 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { AgentRow } from '@/api/agent';
-import type { DiffPlan, SyncProgress, SyncSummary } from '@/api/sync';
+import type { AgentRespVO } from '@/api/agent';
+import type { DiffPlanRespVO, SyncProgress, SyncSummaryRespVO } from '@/api/sync';
 import { useUiStore } from '@/stores/ui';
 import SyncCenter from './sync-center';
 
@@ -29,7 +29,7 @@ import { agentDetect, agentList } from '@/api/agent';
 import { onSyncProgress, resourceAgentLinks, syncApply, syncDiff } from '@/api/sync';
 import { libraryList } from '@/api/library';
 
-function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
+function makeAgent(overrides: Partial<AgentRespVO> = {}): AgentRespVO {
 	return {
 		id: 1,
 		agentKind: 'ClaudeCode',
@@ -44,7 +44,7 @@ function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
 	};
 }
 
-const emptyPlan: DiffPlan = { items: [] };
+const emptyPlan: DiffPlanRespVO = { items: [] };
 
 function renderSyncCenter() {
 	const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -68,7 +68,7 @@ describe('SyncCenter 页面', () => {
 	});
 
 	it('应渲染 agent_list 聚合而来的统计卡数值与 Agent 表行', async () => {
-		const agents: AgentRow[] = [
+		const agents: AgentRespVO[] = [
 			makeAgent({ id: 1, name: 'Claude Code', status: true }),
 			makeAgent({ id: 2, name: 'Cursor', status: false }),
 		];
@@ -122,7 +122,7 @@ describe('SyncCenter 页面', () => {
 
 	it('点击某 Agent 行应据其 sync_diff 结果打开差异面板并显示条目', async () => {
 		const user = userEvent.setup();
-		const agents: AgentRow[] = [makeAgent({ id: 1, name: 'Claude Code' })];
+		const agents: AgentRespVO[] = [makeAgent({ id: 1, name: 'Claude Code' })];
 		vi.mocked(agentList).mockResolvedValue(agents);
 		vi.mocked(syncDiff).mockResolvedValue({
 			items: [
@@ -146,14 +146,14 @@ describe('SyncCenter 页面', () => {
 
 	it('点击"一键同步到所有 Agent"应调用 sync_apply(在线本地 Agent id), 并随 onSyncProgress 更新进度提示', async () => {
 		const user = userEvent.setup();
-		const agents: AgentRow[] = [
+		const agents: AgentRespVO[] = [
 			makeAgent({ id: 1, name: 'Claude Code', status: true }),
 			makeAgent({ id: 2, name: 'Cursor', status: false }),
 		];
 		vi.mocked(agentList).mockResolvedValue(agents);
-		let resolveApply!: (value: SyncSummary) => void;
+		let resolveApply!: (value: SyncSummaryRespVO) => void;
 		vi.mocked(syncApply).mockReturnValue(
-			new Promise<SyncSummary>((resolve) => {
+			new Promise<SyncSummaryRespVO>((resolve) => {
 				resolveApply = resolve;
 			}),
 		);

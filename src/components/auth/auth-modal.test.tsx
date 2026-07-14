@@ -5,7 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AuthAccount } from '@/api/auth';
+import type { AuthAccountRespVO } from '@/api/auth';
 import { AuthModal } from './auth-modal';
 
 vi.mock('@/api/auth', () => ({
@@ -15,7 +15,7 @@ vi.mock('@/api/auth', () => ({
 
 import { authLogin, authEnterToken } from '@/api/auth';
 
-function makeAccount(overrides: Partial<AuthAccount> = {}): AuthAccount {
+function makeAccount(overrides: Partial<AuthAccountRespVO> = {}): AuthAccountRespVO {
 	return {
 		id: 1,
 		provider: 'GitHub',

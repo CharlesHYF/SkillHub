@@ -4,7 +4,7 @@
 
 use rusqlite::{named_params, params, Connection, OptionalExtension, Row};
 
-use crate::domain::resource::{Resource, ResourceType, SourceType};
+use crate::domain::resource::{ResourceRespVO, ResourceType, SourceType};
 
 /// 新建资源入参: id/create_time/update_time 由数据库生成, 不在此结构体中
 #[derive(Debug, Clone)]
@@ -33,9 +33,9 @@ pub struct ResourceMetaUpdate {
 	pub local_path: String,
 }
 
-/// 将一行查询结果映射为 Resource 实体
-fn row_to_resource(row: &Row) -> rusqlite::Result<Resource> {
-	Ok(Resource {
+/// 将一行查询结果映射为 ResourceRespVO 实体
+fn row_to_resource(row: &Row) -> rusqlite::Result<ResourceRespVO> {
+	Ok(ResourceRespVO {
 		id: row.get(0)?,
 		res_type: ResourceType::from_i64(row.get(1)?),
 		name: row.get(2)?,
@@ -69,7 +69,7 @@ pub fn insert(conn: &Connection, item: &NewResource) -> rusqlite::Result<i64> {
 }
 
 /// 按过滤条件查询资源列表, 按 id 升序; res_type/keyword 均为可选过滤, SQL 文本固定不拼接
-pub fn list(conn: &Connection, filter: &ListFilter) -> rusqlite::Result<Vec<Resource>> {
+pub fn list(conn: &Connection, filter: &ListFilter) -> rusqlite::Result<Vec<ResourceRespVO>> {
 	let res_type_param: Option<i64> = filter.res_type.map(i64::from);
 	let keyword_param: Option<String> = filter.keyword.as_ref().map(|k| format!("%{k}%"));
 	let mut stmt = conn.prepare(
@@ -88,7 +88,7 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> rusqlite::Result<Vec<Reso
 }
 
 /// 按主键查询单条资源, 不存在返回 None(而非 Err)
-pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Option<Resource>> {
+pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Option<ResourceRespVO>> {
 	conn.query_row(
 		"SELECT id, res_type, name, display_name, version, source_type, local_path, enabled, \
 		 create_time, update_time \
@@ -107,7 +107,7 @@ pub fn find_by_type_and_name(
 	conn: &Connection,
 	res_type: ResourceType,
 	name: &str,
-) -> rusqlite::Result<Option<Resource>> {
+) -> rusqlite::Result<Option<ResourceRespVO>> {
 	conn.query_row(
 		"SELECT id, res_type, name, display_name, version, source_type, local_path, enabled, \
 		 create_time, update_time \

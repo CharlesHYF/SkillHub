@@ -8,7 +8,7 @@ use serde::Serialize;
 /// activity_log 表一行, 字段名与列名逐一对应
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ActivityRow {
+pub struct ActivityRespVO {
 	pub id: i64,
 	pub act_type: i64,
 	pub res_type: i64,
@@ -17,9 +17,9 @@ pub struct ActivityRow {
 	pub create_time: String,
 }
 
-/// 将一行查询结果映射为 ActivityRow 实体
-fn row_to_activity(row: &Row) -> rusqlite::Result<ActivityRow> {
-	Ok(ActivityRow {
+/// 将一行查询结果映射为 ActivityRespVO 实体
+fn row_to_activity(row: &Row) -> rusqlite::Result<ActivityRespVO> {
+	Ok(ActivityRespVO {
 		id: row.get(0)?,
 		act_type: row.get(1)?,
 		res_type: row.get(2)?,
@@ -46,7 +46,7 @@ pub fn add(
 }
 
 /// 查询最近若干条活动, 按 create_time/id 倒序(最新在前)
-pub fn recent(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<ActivityRow>> {
+pub fn recent(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<ActivityRespVO>> {
 	let mut stmt = conn.prepare(
 		"SELECT id, act_type, res_type, title, detail, create_time \
 		 FROM activity_log ORDER BY create_time DESC, id DESC LIMIT ?1",

@@ -9,10 +9,10 @@
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-use crate::domain::sync::DiffPlan;
+use crate::domain::sync::DiffPlanRespVO;
 use crate::infra::repo_agent;
-use crate::infra::repo_assoc::{self, ResourceAgentLink};
-use crate::services::sync::{self, SyncSummary};
+use crate::infra::repo_assoc::{self, ResourceAgentLinkRespVO};
+use crate::services::sync::{self, SyncSummaryRespVO};
 use crate::AppState;
 
 use super::home_dir;
@@ -46,14 +46,16 @@ pub fn assoc_set(
 /// 界面统计"已关联 Agent 数"列与详情面板"已关联 Agent"列表复用同一份数据, 避免逐资源 N+1
 /// 查询(见 repo_assoc::list_all_links); 是对仓储的直接透传, 无额外业务逻辑, 故不下沉 services 层
 #[tauri::command]
-pub fn resource_agent_links(state: State<'_, AppState>) -> Result<Vec<ResourceAgentLink>, String> {
+pub fn resource_agent_links(
+	state: State<'_, AppState>,
+) -> Result<Vec<ResourceAgentLinkRespVO>, String> {
 	let conn = state.db();
 	repo_assoc::list_all_links(&conn).map_err(|e| e.to_string())
 }
 
 /// 计算某 Agent 的期望态与其配置文件实际态之间的差异计划(见 services::sync::diff_for_agent)
 #[tauri::command]
-pub fn sync_diff(state: State<'_, AppState>, agent_id: i64) -> Result<DiffPlan, String> {
+pub fn sync_diff(state: State<'_, AppState>, agent_id: i64) -> Result<DiffPlanRespVO, String> {
 	let conn = state.db();
 	let home = home_dir()?;
 	sync::diff_for_agent(&conn, &home, agent_id).map_err(|e| e.to_string())
@@ -61,19 +63,19 @@ pub fn sync_diff(state: State<'_, AppState>, agent_id: i64) -> Result<DiffPlan, 
 
 /// 对给定 Agent 列表逐一应用同步(见 services::sync::apply_for_agent), 每处理完一个 Agent
 /// (处理前后各一次)向前端 "sync://progress" 频道推送一次进度, 最终返回各 Agent 结果相加后的
-/// 总 SyncSummary。逐 Agent 顺序处理(非并发): 都共享同一个 state.db 连接, 顺序处理也更符合
+/// 总 SyncSummaryRespVO。逐 Agent 顺序处理(非并发): 都共享同一个 state.db 连接, 顺序处理也更符合
 /// "进度条"这个使用场景的直觉; 若某个 Agent 应用过程本身出错(如 agent_id 已失效这类结构性
-/// 错误, 区别于"该 Agent 内某几项同步失败"——那种情况已被计入 SyncSummary.failed, 不会
+/// 错误, 区别于"该 Agent 内某几项同步失败"——那种情况已被计入 SyncSummaryRespVO.failed, 不会
 /// 走到这里报错), 整批立即中止并把错误信息返回给前端, 不再继续处理剩余 Agent
 #[tauri::command]
 pub fn sync_apply(
 	app: AppHandle,
 	state: State<'_, AppState>,
 	agent_ids: Vec<i64>,
-) -> Result<SyncSummary, String> {
+) -> Result<SyncSummaryRespVO, String> {
 	let home = home_dir()?;
 	let total = agent_ids.len() as i64;
-	let mut summary = SyncSummary {
+	let mut summary = SyncSummaryRespVO {
 		success: 0,
 		failed: 0,
 		skipped: 0,

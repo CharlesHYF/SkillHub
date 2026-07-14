@@ -1,4 +1,4 @@
-// 文件作用: 市场领域类型 —— SourceId 来源枚举、MarketResource 归一化实体、InstallManifest
+// 文件作用: 市场领域类型 —— SourceId 来源枚举、MarketResourceRespVO 归一化实体、InstallManifest
 //           安装清单、SortBy/Query 查询参数, 提供与 market_cache 表 INTEGER 列的 i64 互转
 //           (见 migrations/0001_init.sql market_cache 表注释)
 // 创建日期: 2026-07-09
@@ -67,7 +67,7 @@ pub enum InstallManifest {
 /// 落库时整份序列化进 raw_json, 见 infra::repo_market)
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct MarketResource {
+pub struct MarketResourceRespVO {
 	pub source_type: SourceId,
 	pub res_type: ResourceType,
 	/// 来源内唯一标识(如 "owner/repo:path"), 与 source_type 组合唯一(对应 uk_market_cache_src_ext)
@@ -226,8 +226,8 @@ mod tests {
 		assert_eq!(back, manifest);
 	}
 
-	fn sample_market_resource() -> MarketResource {
-		MarketResource {
+	fn sample_market_resource() -> MarketResourceRespVO {
+		MarketResourceRespVO {
 			source_type: SourceId::GithubSkills,
 			res_type: ResourceType::Skill,
 			ext_id: "acme/skills:demo".to_string(),
@@ -249,7 +249,7 @@ mod tests {
 		}
 	}
 
-	// MarketResource: 应整体序列化为 camelCase(sourceType/resType/extId/displayName/authRequired/
+	// MarketResourceRespVO: 应整体序列化为 camelCase(sourceType/resType/extId/displayName/authRequired/
 	// installManifest/updatedAt), 且能通过 JSON 往返完整还原(验证嵌套 InstallManifest 一并往返)
 	#[test]
 	fn market_resource_round_trips_through_json_with_camel_case_fields() {
@@ -264,7 +264,7 @@ mod tests {
 		assert!(json.get("source_type").is_none());
 		assert!(json.get("ext_id").is_none());
 
-		let back: MarketResource =
+		let back: MarketResourceRespVO =
 			serde_json::from_str(&serde_json::to_string(&resource).unwrap()).unwrap();
 		assert_eq!(back, resource);
 	}

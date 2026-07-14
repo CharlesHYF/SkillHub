@@ -1,5 +1,5 @@
 // 文件作用: 统一 HTTP 客户端封装 —— 固定超时/UA 的 reqwest::Client 构造(client)、依用户
-//           Settings 的网络代理/超时字段构造的 reqwest::Client(build_http_client, M4 Task 2 新增,
+//           SettingRespVO 的网络代理/超时字段构造的 reqwest::Client(build_http_client, M4 Task 2 新增,
 //           供市场刷新/安装、认证等真实发起网络 I/O 的调用路径复用, 让 net_* 五字段从"仅持久化"
 //           变为"真实生效"), 以及带 Bearer 鉴权与 ETag 增量刷新(If-None-Match/304)的 JSON GET
 //           封装, 供 M2 市场三源聚合(github_skills/mcp_registry/github_mcp)与 OAuth 令牌交换复用
@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use reqwest::{Client, StatusCode};
 use serde::de::DeserializeOwned;
 
-use crate::domain::setting::Settings;
+use crate::domain::setting::SettingRespVO;
 
 /// 请求超时: 市场源/OAuth 端点均是轻量 JSON 接口, 20 秒足够覆盖弱网, 同时避免异常挂起拖累 UI
 const TIMEOUT_SECS: u64 = 20;
@@ -29,11 +29,11 @@ pub fn client() -> Client {
 		.expect("构造 reqwest 客户端失败: 均为静态配置, 正常不应失败")
 }
 
-/// 超时兜底值(秒): Settings.net_timeout_sec 非正数(0 或理论上不应出现的负数)时回落此值,
-/// 与 domain::setting::Settings::default 的 net_timeout_sec 默认值保持一致
+/// 超时兜底值(秒): SettingRespVO.net_timeout_sec 非正数(0 或理论上不应出现的负数)时回落此值,
+/// 与 domain::setting::SettingRespVO::default 的 net_timeout_sec 默认值保持一致
 const FALLBACK_TIMEOUT_SECS: u64 = 30;
 
-/// 依用户 Settings 的网络代理/超时字段构造 reqwest::Client, 供市场刷新/安装、认证等真实发起
+/// 依用户 SettingRespVO 的网络代理/超时字段构造 reqwest::Client, 供市场刷新/安装、认证等真实发起
 /// 网络 I/O 的调用路径复用(与上面 client() 的区别: client() 是不感知用户设置的固定超时/UA
 /// 默认客户端, 供尚未接入设置的场景/测试沿用)。调用方应遵循与 client() 相同的"复用同一实例"
 /// 约定, 每次发起请求前重新构造即可(构造本身只是本地状态机装配, 不含网络 I/O, 代价很低)。
@@ -51,7 +51,7 @@ const FALLBACK_TIMEOUT_SECS: u64 = 30;
 ///   不假造行为
 ///
 /// 超时: net_timeout_sec>0 时使用其值, 否则回落 FALLBACK_TIMEOUT_SECS(30 秒)
-pub fn build_http_client(settings: &Settings) -> reqwest::Result<Client> {
+pub fn build_http_client(settings: &SettingRespVO) -> reqwest::Result<Client> {
 	let timeout_secs = if settings.net_timeout_sec > 0 {
 		settings.net_timeout_sec as u64
 	} else {
@@ -318,9 +318,9 @@ mod tests {
 	// net_proxy_mode=0(系统默认): 不显式设代理, 仍应成功构造
 	#[test]
 	fn build_http_client_ok_with_system_default_proxy_mode() {
-		let settings = Settings {
+		let settings = SettingRespVO {
 			net_proxy_mode: 0,
-			..Settings::default()
+			..SettingRespVO::default()
 		};
 		assert!(build_http_client(&settings).is_ok());
 	}
@@ -328,9 +328,9 @@ mod tests {
 	// net_proxy_mode=1(不使用代理): 显式 no_proxy(), 应成功构造
 	#[test]
 	fn build_http_client_ok_with_no_proxy_mode() {
-		let settings = Settings {
+		let settings = SettingRespVO {
 			net_proxy_mode: 1,
-			..Settings::default()
+			..SettingRespVO::default()
 		};
 		assert!(build_http_client(&settings).is_ok());
 	}
@@ -338,9 +338,9 @@ mod tests {
 	// net_proxy_mode=2(手动)但两个代理地址均留空: 等同不设代理, 应成功构造, 不报错
 	#[test]
 	fn build_http_client_ok_with_manual_mode_and_empty_proxy_addresses() {
-		let settings = Settings {
+		let settings = SettingRespVO {
 			net_proxy_mode: 2,
-			..Settings::default()
+			..SettingRespVO::default()
 		};
 		assert!(build_http_client(&settings).is_ok());
 	}
@@ -348,23 +348,23 @@ mod tests {
 	// net_proxy_mode=2(手动)且给定合法的 http/https 代理串: 应能成功构造
 	#[test]
 	fn build_http_client_ok_with_manual_mode_and_valid_proxy_addresses() {
-		let settings = Settings {
+		let settings = SettingRespVO {
 			net_proxy_mode: 2,
 			net_http_proxy: "http://127.0.0.1:7890".to_string(),
 			net_https_proxy: "http://127.0.0.1:7891".to_string(),
-			..Settings::default()
+			..SettingRespVO::default()
 		};
 		assert!(build_http_client(&settings).is_ok());
 	}
 
 	// net_timeout_sec=0: 应回落 FALLBACK_TIMEOUT_SECS(30 秒)而不是构造出 0 秒超时的客户端,
 	// 仍应成功构造(本函数不对外暴露 timeout 字段, 只能验证"不因 0 而出错", 具体秒数由
-	// domain::setting::Settings::default 的契约值 30 保证一致)
+	// domain::setting::SettingRespVO::default 的契约值 30 保证一致)
 	#[test]
 	fn build_http_client_ok_and_falls_back_timeout_when_zero() {
-		let settings = Settings {
+		let settings = SettingRespVO {
 			net_timeout_sec: 0,
-			..Settings::default()
+			..SettingRespVO::default()
 		};
 		assert!(build_http_client(&settings).is_ok());
 	}
@@ -373,17 +373,17 @@ mod tests {
 	// FALLBACK_TIMEOUT_SECS, 成功构造, 不 panic
 	#[test]
 	fn build_http_client_ok_and_falls_back_timeout_when_negative() {
-		let settings = Settings {
+		let settings = SettingRespVO {
 			net_timeout_sec: -1,
-			..Settings::default()
+			..SettingRespVO::default()
 		};
 		assert!(build_http_client(&settings).is_ok());
 	}
 
-	// Settings::default() 本身(net_proxy_mode=0, net_timeout_sec=30): 应能成功构造, 覆盖
+	// SettingRespVO::default() 本身(net_proxy_mode=0, net_timeout_sec=30): 应能成功构造, 覆盖
 	// "最常见的从未改过设置"这一默认路径
 	#[test]
 	fn build_http_client_ok_with_default_settings() {
-		assert!(build_http_client(&Settings::default()).is_ok());
+		assert!(build_http_client(&SettingRespVO::default()).is_ok());
 	}
 }

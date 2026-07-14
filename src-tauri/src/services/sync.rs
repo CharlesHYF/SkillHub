@@ -16,13 +16,13 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::domain::agent::{AgentKind, DetectedAgent, McpServerDef};
-use crate::domain::resource::{Resource, ResourceType};
+use crate::domain::resource::{ResourceRespVO, ResourceType};
 use crate::domain::sync::{
-	reconcile, DesiredPayload, DesiredResource, DiffAction, DiffItem, DiffPlan,
+	reconcile, DesiredPayload, DesiredResource, DiffAction, DiffItem, DiffPlanRespVO,
 };
 use crate::infra::adapter::{all_adapters, AgentAdapter};
 use crate::infra::repo_activity;
-use crate::infra::repo_agent::{self, AgentRow};
+use crate::infra::repo_agent::{self, AgentRespVO};
 use crate::infra::repo_assoc;
 use crate::infra::repo_resource::{self, ListFilter};
 use crate::infra::repo_sync;
@@ -30,7 +30,7 @@ use crate::infra::repo_sync;
 /// 一次单 Agent 同步应用(apply_for_agent)的结果汇总, 供命令层(Task 8)直接返回给前端
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct SyncSummary {
+pub struct SyncSummaryRespVO {
 	pub success: i64,
 	pub failed: i64,
 	pub skipped: i64,
@@ -41,7 +41,7 @@ pub struct SyncSummary {
 /// repo_agent::upsert), 最终返回 agent 表当前全量(与 repo_agent::list 语义一致, 供命令层直接
 /// 展示; 不止本次探测到的那些行, 历史上探测过但本次未再探测到的行仍会保留, 是否需要据此标记
 /// 离线留待后续任务)
-pub fn detect_all(conn: &Connection, home: &Path) -> Result<Vec<AgentRow>> {
+pub fn detect_all(conn: &Connection, home: &Path) -> Result<Vec<AgentRespVO>> {
 	for adapter in all_adapters(home) {
 		for detected in adapter.detect() {
 			repo_agent::upsert(conn, &detected)?;
@@ -50,16 +50,16 @@ pub fn detect_all(conn: &Connection, home: &Path) -> Result<Vec<AgentRow>> {
 	Ok(repo_agent::list(conn)?)
 }
 
-/// 把一条 Resource 转成 reconcile 所需的期望资源(DesiredResource): MCP 从 local_path 指向的
+/// 把一条 ResourceRespVO 转成 reconcile 所需的期望资源(DesiredResource): MCP 从 local_path 指向的
 /// JSON 文件(单个服务定义对象, 形如 {"command":...,"args":...,"env":...} 或 {"url":...})解析出
 /// McpServerDef, name 取 res.name(定义文件内部不重复携带 name, 与
 /// infra::adapter::json_mcp::parse_mcp_servers 里"键名即服务器名"的角色对应, 只是这里 name
-/// 来自 Resource 而非 JSON 键); Skill 直接把 local_path 包成 src_dir, 实际内容(SKILL.md 是否
+/// 来自 ResourceRespVO 而非 JSON 键); Skill 直接把 local_path 包成 src_dir, 实际内容(SKILL.md 是否
 /// 存在等)留给 apply 阶段的 SkillTarget::write_skill 处理, 此处不预读校验。
 /// 读不到 MCP 定义文件、解析失败、或根节点不是 JSON 对象, 都视为该资源本身有问题, 返回 None
 /// 让调用方跳过(不让一条坏资源拖垮整次同步的 diff 计算), 呼应 adapter 层"宽松解析, 单条失败
 /// 不拖累整体"的一贯风格
-fn resource_to_desired(res: &Resource) -> Option<DesiredResource> {
+fn resource_to_desired(res: &ResourceRespVO) -> Option<DesiredResource> {
 	let payload = match res.res_type {
 		ResourceType::Mcp => {
 			let text = fs::read_to_string(&res.local_path).ok()?;
@@ -82,7 +82,7 @@ fn resource_to_desired(res: &Resource) -> Option<DesiredResource> {
 }
 
 /// 从单个 MCP 服务定义 JSON 对象(形如 {"command":...,"args":...,"env":...} 或 {"url":...})
-/// 提取字段构造 McpServerDef, name 由调用方给定(取 Resource.name, 定义文件内部不重复携带
+/// 提取字段构造 McpServerDef, name 由调用方给定(取 ResourceRespVO.name, 定义文件内部不重复携带
 /// name)。字段逐个宽松提取, 与 infra::adapter::json_mcp::parse_mcp_servers 对单条服务器的
 /// 解析策略一致: 字段缺失或类型不符都退回默认值, 不因单个字段异常整体失败
 fn parse_single_mcp_def(name: &str, raw: &Value) -> McpServerDef {
@@ -118,10 +118,10 @@ fn parse_single_mcp_def(name: &str, raw: &Value) -> McpServerDef {
 
 /// 计算某 Agent 的期望态(desired)与其配置文件实际态(actual)之间的差异计划: 读该 Agent 当前
 /// 期望关联的资源(resource_agent.desired=1)与它配置文件里的实际内容, 交给 domain::sync::
-/// reconcile 纯函数产出 DiffPlan; managed 边界取该 Agent 在 resource_agent 里全部登记过的
+/// reconcile 纯函数产出 DiffPlanRespVO; managed 边界取该 Agent 在 resource_agent 里全部登记过的
 /// 资源(不论当前 desired 取值, 见 repo_assoc::managed_keys_for_agent), 使"曾期望但现已取消
 /// 关联"的历史项能被正确判定为 Remove(reconcile 的安全边界语义见该函数文档)
-pub fn diff_for_agent(conn: &Connection, home: &Path, agent_id: i64) -> Result<DiffPlan> {
+pub fn diff_for_agent(conn: &Connection, home: &Path, agent_id: i64) -> Result<DiffPlanRespVO> {
 	let row = repo_agent::get(conn, agent_id)?
 		.ok_or_else(|| anyhow::anyhow!("Agent 不存在: id={agent_id}"))?;
 	let detected = agent_row_to_detected(&row);
@@ -144,11 +144,11 @@ pub fn diff_for_agent(conn: &Connection, home: &Path, agent_id: i64) -> Result<D
 	Ok(reconcile(&desired, &actual, &managed))
 }
 
-/// 把 AgentRow(数据库持久化态)还原为 DetectedAgent(AgentAdapter::read_state/apply 所需的探测
+/// 把 AgentRespVO(数据库持久化态)还原为 DetectedAgent(AgentAdapter::read_state/apply 所需的探测
 /// 态入参); 字段逐一对应, online 取自 status 列。
 /// 可见性 pub(crate): 供 services::agent_import(M6 Task BE-2, 从已检测 Agent 反向导入已装
 /// Skill/MCP 到本地库)复用同一份换算逻辑, 与 diff_for_agent 取 adapter/组装探测态的方式一致
-pub(crate) fn agent_row_to_detected(row: &AgentRow) -> DetectedAgent {
+pub(crate) fn agent_row_to_detected(row: &AgentRespVO) -> DetectedAgent {
 	DetectedAgent {
 		kind: row.agent_kind,
 		name: row.name.clone(),
@@ -174,8 +174,8 @@ pub(crate) fn find_adapter(
 
 /// 对某 Agent 执行一次完整同步: 计算差异计划 -> 交给适配器落地写入配置文件 -> 把每一项的
 /// 执行结果记入 sync_run/sync_item, 并据此维护 resource_agent 的 applied_hash/sync_status ->
-/// 收尾运行汇总 -> 记一条活动日志, 最终返回给命令层的汇总结果(SyncSummary)
-pub fn apply_for_agent(conn: &Connection, home: &Path, agent_id: i64) -> Result<SyncSummary> {
+/// 收尾运行汇总 -> 记一条活动日志, 最终返回给命令层的汇总结果(SyncSummaryRespVO)
+pub fn apply_for_agent(conn: &Connection, home: &Path, agent_id: i64) -> Result<SyncSummaryRespVO> {
 	let plan = diff_for_agent(conn, home, agent_id)?;
 
 	let row = repo_agent::get(conn, agent_id)?
@@ -264,7 +264,7 @@ pub fn apply_for_agent(conn: &Connection, home: &Path, agent_id: i64) -> Result<
 		&format!("成功 {success} 失败 {failed} 跳过 {skipped}"),
 	)?;
 
-	Ok(SyncSummary {
+	Ok(SyncSummaryRespVO {
 		success,
 		failed,
 		skipped,
@@ -513,7 +513,7 @@ mod tests {
 
 	// apply_for_agent: 接上"desired 的 MCP 资源"场景, apply 后配置文件应真的写入该 MCP,
 	// sync_run/sync_item 应落库, resource_agent 的 applied_hash/sync_status 应更新为已同步,
-	// SyncSummary 应报告 success=1
+	// SyncSummaryRespVO 应报告 success=1
 	#[test]
 	fn apply_for_agent_writes_config_and_persists_sync_history() {
 		let dir = tempdir().unwrap();
@@ -536,7 +536,7 @@ mod tests {
 
 		assert_eq!(
 			summary,
-			SyncSummary {
+			SyncSummaryRespVO {
 				success: 1,
 				failed: 0,
 				skipped: 0,
@@ -570,7 +570,7 @@ mod tests {
 	}
 
 	// apply_for_agent: Skill 资源的 src_dir 指向不存在的目录, 应用应失败(而非整体报错),
-	// SyncSummary 应报告 failed=1, sync_run 状态应为全败, resource_agent.sync_status 应置为 3
+	// SyncSummaryRespVO 应报告 failed=1, sync_run 状态应为全败, resource_agent.sync_status 应置为 3
 	#[test]
 	fn apply_for_agent_marks_failed_when_skill_source_dir_missing() {
 		let dir = tempdir().unwrap();

@@ -1,4 +1,4 @@
-// 文件作用: 设置(Settings)界面展示态的可选项文案 —— 代理模式下拉、更新通道单选的可选项, 措辞与
+// 文件作用: 设置(SettingRespVO)界面展示态的可选项文案 —— 代理模式下拉、更新通道单选的可选项, 措辞与
 //           原型截图第 7 屏一致, 供 network-section/update-channel-section 共用, 避免同一套
 //           文案写多份(与 portability/impexp-display 同一惯例)
 // 创建日期: 2026-07-10

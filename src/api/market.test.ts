@@ -13,10 +13,10 @@ import {
 	marketRefresh,
 	marketInstall,
 	parseAuthRequiredProvider,
-	type MarketResource,
+	type MarketResourceRespVO,
 } from './market';
 
-const sampleMarketResource: MarketResource = {
+const sampleMarketResource: MarketResourceRespVO = {
 	sourceType: 'GithubSkills',
 	resType: 'Skill',
 	extId: 'acme/skills:demo',

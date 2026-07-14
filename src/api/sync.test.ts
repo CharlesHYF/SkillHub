@@ -18,9 +18,9 @@ import {
 	syncApply,
 	onSyncProgress,
 	resourceAgentLinks,
-	type DiffPlan,
-	type SyncSummary,
-	type ResourceAgentLink,
+	type DiffPlanRespVO,
+	type SyncSummaryRespVO,
+	type ResourceAgentLinkRespVO,
 } from './sync';
 
 describe('sync api', () => {
@@ -34,7 +34,7 @@ describe('sync api', () => {
 	});
 
 	it('syncDiff 以 command 名 sync_diff 调用并传 agentId, 返回差异计划', async () => {
-		const plan: DiffPlan = { items: [] };
+		const plan: DiffPlanRespVO = { items: [] };
 		vi.mocked(invoke).mockResolvedValueOnce(plan);
 		const got = await syncDiff(20);
 		expect(got).toEqual(plan);
@@ -42,7 +42,7 @@ describe('sync api', () => {
 	});
 
 	it('syncApply 以 command 名 sync_apply 调用并传 agentIds, 返回汇总结果', async () => {
-		const summary: SyncSummary = { success: 2, failed: 0, skipped: 0 };
+		const summary: SyncSummaryRespVO = { success: 2, failed: 0, skipped: 0 };
 		vi.mocked(invoke).mockResolvedValueOnce(summary);
 		const got = await syncApply([1, 2]);
 		expect(got).toEqual(summary);
@@ -50,7 +50,7 @@ describe('sync api', () => {
 	});
 
 	it('resourceAgentLinks 以 command 名 resource_agent_links 调用, 返回关联展示行', async () => {
-		const links: ResourceAgentLink[] = [
+		const links: ResourceAgentLinkRespVO[] = [
 			{ resourceId: 1, agentId: 2, agentName: 'Agent Alpha' },
 		];
 		vi.mocked(invoke).mockResolvedValueOnce(links);

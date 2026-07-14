@@ -3,7 +3,7 @@
 import { invoke } from '@tauri-apps/api/core';
 
 /** 首页统计卡片数据 */
-export interface DashboardSummary {
+export interface DashboardSummaryRespVO {
 	skillCount: number;
 	mcpCount: number;
 	agentCount: number;
@@ -12,7 +12,7 @@ export interface DashboardSummary {
 }
 
 /** activity_log 表一行 */
-export interface ActivityRow {
+export interface ActivityRespVO {
 	id: number;
 	actType: number;
 	resType: number;
@@ -22,11 +22,11 @@ export interface ActivityRow {
 }
 
 /** 查询首页统计卡片数据(Skill/MCP 数量、Agent 总数与在线数、待同步数) */
-export async function dashboardSummary(): Promise<DashboardSummary> {
-	return invoke<DashboardSummary>('dashboard_summary');
+export async function dashboardSummary(): Promise<DashboardSummaryRespVO> {
+	return invoke<DashboardSummaryRespVO>('dashboard_summary');
 }
 
 /** 查询最近若干条活动记录, 供首页"最近变更"列表 */
-export async function activityRecent(limit: number): Promise<ActivityRow[]> {
-	return invoke<ActivityRow[]>('activity_recent', { limit });
+export async function activityRecent(limit: number): Promise<ActivityRespVO[]> {
+	return invoke<ActivityRespVO[]>('activity_recent', { limit });
 }

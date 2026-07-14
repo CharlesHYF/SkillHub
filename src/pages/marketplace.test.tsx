@@ -10,7 +10,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import type { MarketResource } from '@/api/market';
+import type { MarketResourceRespVO } from '@/api/market';
 import { useUiStore } from '@/stores/ui';
 import Marketplace from './marketplace';
 
@@ -23,7 +23,7 @@ vi.mock('@/api/market', () => ({
 
 import { marketSearch, marketDetail, marketRefresh, marketInstall } from '@/api/market';
 
-function makeMarketResource(overrides: Partial<MarketResource> = {}): MarketResource {
+function makeMarketResource(overrides: Partial<MarketResourceRespVO> = {}): MarketResourceRespVO {
 	const name = overrides.name ?? 'data-visualizer';
 	return {
 		sourceType: 'GithubSkills',

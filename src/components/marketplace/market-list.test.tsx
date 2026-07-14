@@ -3,10 +3,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { MarketResource } from '@/api/market';
+import type { MarketResourceRespVO } from '@/api/market';
 import { MarketList } from './market-list';
 
-function makeMarketResource(overrides: Partial<MarketResource> = {}): MarketResource {
+function makeMarketResource(overrides: Partial<MarketResourceRespVO> = {}): MarketResourceRespVO {
 	const name = overrides.name ?? 'demo-skill';
 	return {
 		sourceType: 'GithubSkills',

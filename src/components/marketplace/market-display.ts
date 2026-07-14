@@ -2,7 +2,7 @@
 //           时间·分类的空值占位/安装要求/认证说明), 供 market-card/market-list/
 //           market-detail-panel 与 pages/marketplace(-detail) 共用, 避免同一套映射写多份
 // 创建日期: 2026-07-10
-import type { InstallManifest, MarketResource, MarketSourceType } from '@/api/market';
+import type { InstallManifest, MarketResourceRespVO, MarketSourceType } from '@/api/market';
 import type { McpServerDef } from '@/api/sync';
 import type { ResourceKind } from '@/components/common/type-badge';
 import { formatDateTime } from '@/lib/utils';
@@ -19,22 +19,24 @@ const MARKET_SOURCE_TYPE_CODE: Record<MarketSourceType, number> = {
 	GithubMcp: 3,
 };
 
-/** 把 MarketResource.sourceType(字符串变体)转回 market_detail/market_install 等命令所需的
+/** 把 MarketResourceRespVO.sourceType(字符串变体)转回 market_detail/market_install 等命令所需的
  * i64 编码入参 */
 export function sourceTypeToCode(sourceType: MarketSourceType): number {
 	return MARKET_SOURCE_TYPE_CODE[sourceType];
 }
 
 /** 由 sourceType + extId 拼出一条市场资源的复合唯一键, 供选中态/安装错误态按 key 索引
- * (市场资源没有 resource.id 那样的整数主键, 见 domain::market::MarketResource 的复合唯一键设计) */
-export function marketResourceKey(resource: Pick<MarketResource, 'sourceType' | 'extId'>): string {
+ * (市场资源没有 resource.id 那样的整数主键, 见 domain::market::MarketResourceRespVO 的复合唯一键设计) */
+export function marketResourceKey(
+	resource: Pick<MarketResourceRespVO, 'sourceType' | 'extId'>,
+): string {
 	return `${resource.sourceType}:${resource.extId}`;
 }
 
 /** 后端 ResourceType('Skill'|'Mcp', 首字母大写) -> TypeBadge 所需的 ResourceKind(小写);
  * 与 components/installed/resource-display.ts 的同名函数逻辑一致, 因两个 feature 目录彼此独立,
  * 这里保留一份轻量副本, 不做跨 feature 目录引用 */
-export function toResourceKind(resType: MarketResource['resType']): ResourceKind {
+export function toResourceKind(resType: MarketResourceRespVO['resType']): ResourceKind {
 	return resType.toLowerCase() as ResourceKind;
 }
 
@@ -90,7 +92,7 @@ function mcpServerRequirementLines(serverDef: McpServerDef): string[] {
  * 或启动命令/远程地址, 以及 McpTemplate 需要用户填充的环境变量名)。不填充原型截图中那些当前
  * 领域模型未提供数据来源的通用占位项(如"SkillHub 版本"/"运行环境"/"权限"), 避免展示虚构信息,
  * 见本任务报告"与原型差异"一节 */
-export function deriveInstallRequirements(resource: MarketResource): string[] {
+export function deriveInstallRequirements(resource: MarketResourceRespVO): string[] {
 	const manifest: InstallManifest = resource.installManifest;
 	if ('Skill' in manifest) {
 		const { repo, path, gitRef } = manifest.Skill;
@@ -109,7 +111,7 @@ export function deriveInstallRequirements(resource: MarketResource): string[] {
 
 /** 认证与授权说明文案: 直接由 authRequired 派生, 需要授权时的措辞与原型截图一致, 无需授权则
  * 给出对应的中性说明, 不引入当前领域模型未提供的独立字段 */
-export function deriveAuthNotice(resource: MarketResource): string {
+export function deriveAuthNotice(resource: MarketResourceRespVO): string {
 	return resource.authRequired
 		? '部分功能需要授权访问第三方服务, 若需要登录或授权, 将在 SkillHub 内部打开完成。'
 		: '该资源无需登录或授权, 可直接下载安装。';

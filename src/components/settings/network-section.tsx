@@ -5,7 +5,7 @@
 // 创建日期: 2026-07-10
 import { Network } from 'lucide-react';
 
-import type { Settings } from '@/api/setting';
+import type { SettingRespVO } from '@/api/setting';
 import { PROXY_MODE_OPTIONS } from './settings-display';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -19,10 +19,10 @@ import {
 
 interface NetworkSectionProps {
 	settings: Pick<
-		Settings,
+		SettingRespVO,
 		'netProxyMode' | 'netHttpProxy' | 'netHttpsProxy' | 'netNoProxy' | 'netTimeoutSec'
 	>;
-	onChange: (patch: Partial<Settings>) => void;
+	onChange: (patch: Partial<SettingRespVO>) => void;
 }
 
 /** 设置界面"网络与代理"分区: 还原原型第 7 屏右下卡片 */
@@ -41,7 +41,9 @@ export function NetworkSection({ settings, onChange }: NetworkSectionProps) {
 					<Select
 						value={String(settings.netProxyMode)}
 						onValueChange={(value) =>
-							onChange({ netProxyMode: Number(value) as Settings['netProxyMode'] })
+							onChange({
+								netProxyMode: Number(value) as SettingRespVO['netProxyMode'],
+							})
 						}
 					>
 						<SelectTrigger size="sm" className="w-36" aria-label="代理模式">

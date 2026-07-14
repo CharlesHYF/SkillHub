@@ -1,5 +1,5 @@
 // 文件作用: 设置服务编排层 —— 读取 setting 表全量键值对并类型化还原(get_all)、把一份
-//           Settings 逐键落库后回读确认(save)。只接受 &Connection, 不摸 AppState/Tauri
+//           SettingRespVO 逐键落库后回读确认(save)。只接受 &Connection, 不摸 AppState/Tauri
 //           运行时, 呼应 services::portability/services::market 既有的分层约定(具体命令层
 //           加锁与错误转换见 commands::setting)
 // 创建日期: 2026-07-10
@@ -9,24 +9,24 @@ use std::path::Path;
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::domain::setting::Settings;
+use crate::domain::setting::SettingRespVO;
 use crate::infra::repo_setting;
 
-/// 读取当前设置: 取 setting 表全量行, 按 domain::setting::Settings::from_rows 类型化还原
+/// 读取当前设置: 取 setting 表全量行, 按 domain::setting::SettingRespVO::from_rows 类型化还原
 /// (缺键或值非法均回落默认值, 见其文档); 表为空(如首次运行, migrations 只建表不预置行)时
-/// 等价于返回 Settings::default()
-pub fn get_all(conn: &Connection) -> Result<Settings> {
+/// 等价于返回 SettingRespVO::default()
+pub fn get_all(conn: &Connection) -> Result<SettingRespVO> {
 	let rows = repo_setting::list_all(conn)?;
-	Ok(Settings::from_rows(&rows))
+	Ok(SettingRespVO::from_rows(&rows))
 }
 
-/// 保存设置: 把 s 拍平成的 12 个键值对(见 Settings::to_pairs)逐一 upsert 回 setting 表,
+/// 保存设置: 把 s 拍平成的 12 个键值对(见 SettingRespVO::to_pairs)逐一 upsert 回 setting 表,
 /// 再整表回读返回 —— 不直接回传参数 s 本身, 是为了让返回值真实反映落库后的状态(与
 /// services::auth 在 store 之后再查一次同一惯例, 见 commands::auth::auth_enter_token 文档);
 /// 全程未使用显式事务, 与本仓库其它多步落库操作同一既有取舍(见 services::portability 模块级
 /// 说明), 12 次 upsert 均基于 uk_setting_key 唯一索引, 中途某一次失败也不会留下跨键的半套
 /// 不一致状态(单键级别的 upsert 本身是原子的)
-pub fn save(conn: &Connection, s: &Settings) -> Result<Settings> {
+pub fn save(conn: &Connection, s: &SettingRespVO) -> Result<SettingRespVO> {
 	for (cfg_key, cfg_value) in s.to_pairs() {
 		repo_setting::upsert(conn, &cfg_key, &cfg_value)?;
 	}
@@ -38,7 +38,7 @@ pub fn save(conn: &Connection, s: &Settings) -> Result<Settings> {
 /// domain::setting 里语义为"用默认位置", 但用户看不到也无法基于它编辑, 故命令层拿得到 data_dir
 /// 时解析成真实 skills/mcp 子目录填好保存(见 Charles 反馈: 目录按默认值填写保存)。幂等: 已填好
 /// (非空)后再次调用不再改动/落库; 用户显式设过的目录也不会被覆盖
-pub fn get_all_with_default_dirs(conn: &Connection, data_dir: &Path) -> Result<Settings> {
+pub fn get_all_with_default_dirs(conn: &Connection, data_dir: &Path) -> Result<SettingRespVO> {
 	let mut settings = get_all(conn)?;
 	let mut changed = false;
 	if settings.storage_skill_dir.is_empty() {
@@ -66,18 +66,18 @@ mod tests {
 		conn
 	}
 
-	// 空库(未写入任何设置项)读取应等于 Settings::default()
+	// 空库(未写入任何设置项)读取应等于 SettingRespVO::default()
 	#[test]
 	fn get_all_returns_default_when_table_empty() {
 		let conn = setup_conn();
-		assert_eq!(get_all(&conn).unwrap(), Settings::default());
+		assert_eq!(get_all(&conn).unwrap(), SettingRespVO::default());
 	}
 
-	// save 一份每个字段都改成非默认值的 Settings 后, get_all 应与之完全相等(往返幂等)
+	// save 一份每个字段都改成非默认值的 SettingRespVO 后, get_all 应与之完全相等(往返幂等)
 	#[test]
 	fn save_then_get_all_round_trips_non_default_settings() {
 		let conn = setup_conn();
-		let changed = Settings {
+		let changed = SettingRespVO {
 			storage_skill_dir: "/data/skills".to_string(),
 			storage_mcp_dir: "/data/mcp".to_string(),
 			sync_auto_new_agent: false,
@@ -106,9 +106,9 @@ mod tests {
 	#[test]
 	fn save_twice_is_idempotent() {
 		let conn = setup_conn();
-		let changed = Settings {
+		let changed = SettingRespVO {
 			net_timeout_sec: 45,
-			..Settings::default()
+			..SettingRespVO::default()
 		};
 
 		save(&conn, &changed).unwrap();
@@ -144,10 +144,10 @@ mod tests {
 	#[test]
 	fn get_all_with_default_dirs_keeps_user_set_dirs() {
 		let conn = setup_conn();
-		let user = Settings {
+		let user = SettingRespVO {
 			storage_skill_dir: "/my/custom/skills".to_string(),
 			storage_mcp_dir: "/my/custom/mcp".to_string(),
-			..Settings::default()
+			..SettingRespVO::default()
 		};
 		save(&conn, &user).unwrap();
 

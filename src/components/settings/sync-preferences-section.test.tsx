@@ -3,11 +3,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { Settings } from '@/api/setting';
+import type { SettingRespVO } from '@/api/setting';
 import { SyncPreferencesSection } from './sync-preferences-section';
 
 const baseSettings: Pick<
-	Settings,
+	SettingRespVO,
 	'syncAutoNewAgent' | 'syncCheckUpdateOnStart' | 'syncConflictPrompt' | 'syncOnlyEnabled'
 > = {
 	syncAutoNewAgent: true,

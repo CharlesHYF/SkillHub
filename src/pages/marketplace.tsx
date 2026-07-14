@@ -18,7 +18,7 @@ import {
 	marketInstall,
 	marketRefresh,
 	marketSearch,
-	type MarketResource,
+	type MarketResourceRespVO,
 } from '@/api/market';
 import { DetailPanel } from '@/components/common/detail-panel';
 import { EmptyState } from '@/components/common/empty-state';
@@ -98,7 +98,7 @@ export default function Marketplace() {
 			resource,
 			envOverrides,
 		}: {
-			resource: MarketResource;
+			resource: MarketResourceRespVO;
 			envOverrides?: Record<string, string>;
 		}) => marketInstall(sourceTypeToCode(resource.sourceType), resource.extId, envOverrides),
 		onMutate: ({ resource }) => {
@@ -161,14 +161,14 @@ export default function Marketplace() {
 		setSelectedMarket({ sourceType: sourceTypeToCode(first.sourceType), extId: first.extId });
 	}, [searchQuery.isLoading, items, selectedMarket, setSelectedMarket]);
 
-	function handleSelectItem(resource: MarketResource) {
+	function handleSelectItem(resource: MarketResourceRespVO) {
 		setSelectedMarket({
 			sourceType: sourceTypeToCode(resource.sourceType),
 			extId: resource.extId,
 		});
 	}
 
-	function handleDownload(resource: MarketResource) {
+	function handleDownload(resource: MarketResourceRespVO) {
 		installMutation.mutate({ resource });
 	}
 

@@ -1,9 +1,9 @@
-// 文件作用: 设置(Settings)界面(原型第 7 屏) —— 账号与认证(account-section)、存储目录
+// 文件作用: 设置(SettingRespVO)界面(原型第 7 屏) —— 账号与认证(account-section)、存储目录
 //           (storage-section)双列 + 同步偏好(sync-preferences-section)、网络与代理
 //           (network-section)双列 + 底部更新通道(update-channel-section)通栏 + 右下操作条
 //           (恢复默认/保存更改)。设置经 settingsGet 拉取后接入本地可编辑态(draft), 各分区改动
 //           只影响 draft, 点击"保存更改"才经 settingsSave 整份提交; "恢复默认"把 draft 重置为
-//           本文件硬编码的默认 Settings(与后端 domain::setting::Settings 的 Default 同口径,
+//           本文件硬编码的默认 SettingRespVO(与后端 domain::setting::SettingRespVO 的 Default 同口径,
 //           见下方 DEFAULT_SETTINGS 注释), 而不是回退到 settingsGet 加载到的值——存储目录两项
 //           例外, 见 handleReset 注释。账号与认证区复用既有 src/api/auth.ts 封装
 //           (auth_accounts/auth_login/auth_logout/auth_enter_token), 不新造认证相关 command
@@ -12,7 +12,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { authAccounts, authEnterToken, authLogin, authLogout } from '@/api/auth';
-import { settingsGet, settingsSave, type Settings } from '@/api/setting';
+import { settingsGet, settingsSave, type SettingRespVO } from '@/api/setting';
 import { PageHeader } from '@/components/common/page-header';
 import { AccountSection } from '@/components/settings/account-section';
 import { NetworkSection } from '@/components/settings/network-section';
@@ -25,12 +25,12 @@ import { pickDirectory } from '@/lib/dialog';
 const SETTINGS_KEY = 'settings';
 const AUTH_ACCOUNTS_KEY = 'auth-accounts';
 
-/** 设置默认值, 与后端 domain::setting::Settings 的 Default 实现同口径(见本任务契约: 目录空串,
+/** 设置默认值, 与后端 domain::setting::SettingRespVO 的 Default 实现同口径(见本任务契约: 目录空串,
  * 前 3 个同步开关默认开/仅同步已启用项默认关, 代理默认系统模式且地址均为空串, 超时默认 30 秒,
  * 更新通道默认 Stable)。首次加载在 settingsGet 结果返回前先用它兜底渲染, 避免控件短暂处于
  * undefined 态。"恢复默认"按钮也据此重置本地编辑态, 但存储目录两项(storageSkillDir/
  * storageMcpDir)是例外, 不会真的回到这里的空串, 见 handleReset 注释 */
-const DEFAULT_SETTINGS: Settings = {
+const DEFAULT_SETTINGS: SettingRespVO = {
 	storageSkillDir: '',
 	storageMcpDir: '',
 	syncAutoNewAgent: true,
@@ -45,20 +45,20 @@ const DEFAULT_SETTINGS: Settings = {
 	updateChannel: 0,
 };
 
-const SETTINGS_FIELD_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof Settings)[];
+const SETTINGS_FIELD_KEYS = Object.keys(DEFAULT_SETTINGS) as (keyof SettingRespVO)[];
 
-/** 逐字段比较两份 Settings 是否完全一致; 字段均为原始值(string/boolean/number), 不需要深比较 */
-function settingsEqual(a: Settings, b: Settings): boolean {
+/** 逐字段比较两份 SettingRespVO 是否完全一致; 字段均为原始值(string/boolean/number), 不需要深比较 */
+function settingsEqual(a: SettingRespVO, b: SettingRespVO): boolean {
 	return SETTINGS_FIELD_KEYS.every((key) => a[key] === b[key]);
 }
 
-/** 设置(Settings)界面: 还原原型第 7 屏 —— 五个分区 + 右下保存/恢复默认操作条 */
-export default function Settings() {
+/** 设置(SettingRespVO)界面: 还原原型第 7 屏 —— 五个分区 + 右下保存/恢复默认操作条 */
+export default function SettingRespVO() {
 	const queryClient = useQueryClient();
 
 	const settingsQuery = useQuery({ queryKey: [SETTINGS_KEY], queryFn: settingsGet });
 
-	const [draft, setDraft] = useState<Settings>(DEFAULT_SETTINGS);
+	const [draft, setDraft] = useState<SettingRespVO>(DEFAULT_SETTINGS);
 	const [loadedFromServer, setLoadedFromServer] = useState(false);
 
 	// settingsGet 结果到达后, 只在首次把它接入本地编辑态, 避免后台静默 refetch(如窗口重新聚焦)
@@ -71,12 +71,12 @@ export default function Settings() {
 	}, [settingsQuery.data, loadedFromServer]);
 
 	/** 合并式更新本地编辑态, 供各分区组件的 onChange 回调调用(与 export-panel 的 patch 同一惯例) */
-	function patch(next: Partial<Settings>) {
+	function patch(next: Partial<SettingRespVO>) {
 		setDraft((prev) => ({ ...prev, ...next }));
 	}
 
 	const saveMutation = useMutation({
-		mutationFn: (next: Settings) => settingsSave(next),
+		mutationFn: (next: SettingRespVO) => settingsSave(next),
 		onSuccess: (saved) => {
 			queryClient.setQueryData([SETTINGS_KEY], saved);
 			setDraft(saved);
@@ -149,7 +149,7 @@ export default function Settings() {
 	return (
 		<div className="flex h-full flex-col gap-4">
 			<PageHeader
-				title="设置 / Settings"
+				title="设置 / SettingRespVO"
 				description="账号认证、存储目录、同步偏好与网络代理"
 			/>
 

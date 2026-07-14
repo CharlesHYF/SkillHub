@@ -4,14 +4,14 @@
 // 创建日期: 2026-07-10
 import { GitBranch } from 'lucide-react';
 
-import type { Settings } from '@/api/setting';
+import type { SettingRespVO } from '@/api/setting';
 import { UPDATE_CHANNEL_OPTIONS } from './settings-display';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 
 interface UpdateChannelSectionProps {
-	settings: Pick<Settings, 'updateChannel'>;
-	onChange: (patch: Partial<Settings>) => void;
+	settings: Pick<SettingRespVO, 'updateChannel'>;
+	onChange: (patch: Partial<SettingRespVO>) => void;
 }
 
 /** 设置界面"更新通道"分区: 还原原型第 7 屏底部通栏 */
@@ -28,7 +28,7 @@ export function UpdateChannelSection({ settings, onChange }: UpdateChannelSectio
 				<RadioGroup
 					value={String(settings.updateChannel)}
 					onValueChange={(value) =>
-						onChange({ updateChannel: Number(value) as Settings['updateChannel'] })
+						onChange({ updateChannel: Number(value) as SettingRespVO['updateChannel'] })
 					}
 					className="flex items-center gap-8"
 					aria-label="更新通道"

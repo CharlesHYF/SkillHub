@@ -7,9 +7,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn(async () => []),
 }));
 
-import { agentDetect, agentList, type AgentRow } from './agent';
+import { agentDetect, agentList, type AgentRespVO } from './agent';
 
-const sampleAgent: AgentRow = {
+const sampleAgent: AgentRespVO = {
 	id: 1,
 	agentKind: 'ClaudeCode',
 	name: 'Claude Code',

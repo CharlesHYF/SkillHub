@@ -1,7 +1,7 @@
 // 文件作用: 导入导出(Import/Export)相关 Tauri command 的类型化封装 —— 导出包(export_bundle)、
 //           导入预览(import_preview)、导入执行(import_bundle)、导入导出历史(impexp_history)。
-//           Manifest 字段形状取自 M3 计划 Task 1(domain::portability::Manifest, camelCase
-//           序列化); ImportOutcome 与后端 domain::portability::ImportOutcome 逐字段对齐(见类型注释)
+//           ManifestRespVO 字段形状取自 M3 计划 Task 1(domain::portability::ManifestRespVO, camelCase
+//           序列化); ImportOutcomeRespVO 与后端 domain::portability::ImportOutcomeRespVO 逐字段对齐(见类型注释)
 // 创建日期: 2026-07-10
 import { invoke } from '@tauri-apps/api/core';
 
@@ -15,7 +15,7 @@ export type Scope = 0 | 1 | 2;
 export type ConflictStrategy = 0 | 1 | 2;
 
 /** 导出选项, 与后端 export_bundle 的 options 参数一一对应 */
-export interface ExportOptions {
+export interface ExportReqVO {
 	/** 导出全部 Skill */
 	includeSkills: boolean;
 	/** 导出全部 MCP */
@@ -28,7 +28,7 @@ export interface ExportOptions {
 	includeVersionLock: boolean;
 }
 
-/** 导出内容计数, 与 ImportPreview 的 skill/mcp/config/agent 同口径 */
+/** 导出内容计数, 与 ImportPreviewRespVO 的 skill/mcp/config/agent 同口径 */
 export interface ManifestCounts {
 	skill: number;
 	mcp: number;
@@ -36,10 +36,10 @@ export interface ManifestCounts {
 	agent: number;
 }
 
-/** 导出清单: export_bundle 的返回值(字段对应 M3 计划 Task 1 的 domain::portability::Manifest,
+/** 导出清单: export_bundle 的返回值(字段对应 M3 计划 Task 1 的 domain::portability::ManifestRespVO,
  * camelCase 序列化)。M3 前端暂不在 UI 上展示其字段(导出后的记录改走 impexpHistory 表刷新得到),
  * 仅用 Promise 是否 resolve 判断导出是否成功 */
-export interface Manifest {
+export interface ManifestRespVO {
 	schemaVersion: number;
 	exportedAt: string;
 	counts: ManifestCounts;
@@ -47,7 +47,7 @@ export interface Manifest {
 }
 
 /** 导入内容预览: 将要导入的各类内容计数 + 包结构/版本 schema 校验结果 */
-export interface ImportPreview {
+export interface ImportPreviewRespVO {
 	skill: number;
 	mcp: number;
 	config: number;
@@ -56,21 +56,21 @@ export interface ImportPreview {
 	schemaOk: boolean;
 }
 
-/** 一次导入执行的结果, 与后端 domain::portability::ImportOutcome 逐字段对齐
+/** 一次导入执行的结果, 与后端 domain::portability::ImportOutcomeRespVO 逐字段对齐
  * (解析/校验硬失败在 importBundle 之前就已抛错, 故 status 不含 0 失败) */
-export interface ImportOutcome {
+export interface ImportOutcomeRespVO {
 	/** 新导入(含覆盖策略下的覆盖)的资源数 */
 	imported: number;
 	/** 因同名已存在而跳过的资源数(跳过策略) */
 	skipped: number;
 	/** 因冲突改名后落地的资源数(保留两者策略) */
 	renamed: number;
-	/** 结果状态: 1 成功 / 2 部分成功(如某些关联在本机找不到对应 Agent), 与 ImpexpRow.status 同口径 */
+	/** 结果状态: 1 成功 / 2 部分成功(如某些关联在本机找不到对应 Agent), 与 ImpexpRespVO.status 同口径 */
 	status: 1 | 2;
 }
 
 /** 一条导入导出历史记录 */
-export interface ImpexpRow {
+export interface ImpexpRespVO {
 	id: number;
 	/** 操作方向: 0 导出 / 1 导入 */
 	direction: 0 | 1;
@@ -84,13 +84,13 @@ export interface ImpexpRow {
 }
 
 /** 按 options 导出一个包到 outPath, 返回导出清单 */
-export async function exportBundle(options: ExportOptions, outPath: string): Promise<Manifest> {
-	return invoke<Manifest>('export_bundle', { options, outPath });
+export async function exportBundle(options: ExportReqVO, outPath: string): Promise<ManifestRespVO> {
+	return invoke<ManifestRespVO>('export_bundle', { options, outPath });
 }
 
 /** 预览某导入包路径将会导入的内容, 不落地写入 */
-export async function importPreview(path: string): Promise<ImportPreview> {
-	return invoke<ImportPreview>('import_preview', { path });
+export async function importPreview(path: string): Promise<ImportPreviewRespVO> {
+	return invoke<ImportPreviewRespVO>('import_preview', { path });
 }
 
 /** 按冲突策略执行导入; autoSync 表示导入完成后是否自动同步到各 Agent */
@@ -98,11 +98,11 @@ export async function importBundle(
 	path: string,
 	strategy: ConflictStrategy,
 	autoSync: boolean,
-): Promise<ImportOutcome> {
-	return invoke<ImportOutcome>('import_bundle', { path, strategy, autoSync });
+): Promise<ImportOutcomeRespVO> {
+	return invoke<ImportOutcomeRespVO>('import_bundle', { path, strategy, autoSync });
 }
 
 /** 查询最近 limit 条导入导出历史记录 */
-export async function impexpHistory(limit: number): Promise<ImpexpRow[]> {
-	return invoke<ImpexpRow[]>('impexp_history', { limit });
+export async function impexpHistory(limit: number): Promise<ImpexpRespVO[]> {
+	return invoke<ImpexpRespVO[]>('impexp_history', { limit });
 }

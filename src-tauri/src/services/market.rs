@@ -35,8 +35,8 @@ use rusqlite::Connection;
 use serde_json::Value;
 
 use crate::domain::agent::McpServerDef;
-use crate::domain::market::{MarketResource, Query, SortBy, SourceId};
-use crate::domain::resource::{Resource, SourceType};
+use crate::domain::market::{MarketResourceRespVO, Query, SortBy, SourceId};
+use crate::domain::resource::{ResourceRespVO, SourceType};
 use crate::infra::repo_activity;
 use crate::infra::repo_market;
 use crate::infra::repo_resource::{self, NewResource};
@@ -65,14 +65,14 @@ fn full_catalog_query() -> Query {
 /// 只读源(如 mcp_registry)恒收到 None——即便传入的 github_token 非 None, 与这些源自身"恒发
 /// 匿名请求"的既有约定一致(见 infra::source::mcp_registry 文档), 不向不需要认证的公开接口
 /// 无意义地携带令牌。http_client 由调用方传入(生产用 commands::market::market_refresh 依当前
-/// Settings 现场构造的 infra::http::build_http_client 结果, 使代理/超时真正生效; 单测传入
+/// SettingRespVO 现场构造的 infra::http::build_http_client 结果, 使代理/超时真正生效; 单测传入
 /// infra::http::client() 默认客户端即可), 本函数自身不再内部构造, 与 infra::source::mod
 /// "client 由调用方传入"的既有约定一致
 pub async fn fetch_all(
 	sources: &[Box<dyn SourceProvider>],
 	github_token: Option<&str>,
 	http_client: &reqwest::Client,
-) -> Vec<Result<Vec<MarketResource>>> {
+) -> Vec<Result<Vec<MarketResourceRespVO>>> {
 	let query = full_catalog_query();
 
 	let searches = sources.iter().map(|source| {
@@ -100,7 +100,7 @@ pub async fn fetch_all(
 /// 影响三个已交付并测试过的源实现, 超出本任务范围, 留待后续任务评估是否值得做
 pub fn write_refresh_results(
 	conn: &Connection,
-	outcomes: Vec<Result<Vec<MarketResource>>>,
+	outcomes: Vec<Result<Vec<MarketResourceRespVO>>>,
 ) -> Result<usize> {
 	let mut written = 0usize;
 	for outcome in outcomes {
@@ -135,14 +135,18 @@ pub async fn refresh(
 
 /// 按过滤/排序/分页条件搜索市场缓存, 直接转调 repo_market::query(过滤/排序/分页均已在仓储层
 /// 实现, 见其文档), 本层不附加任何业务逻辑。前端原型的"已认证/免费"筛选未在此接入: 每条
-/// MarketResource 本就携带 auth_required 字段, 可由前端在已取回的当页数据上直接筛选, 暂无需
+/// MarketResourceRespVO 本就携带 auth_required 字段, 可由前端在已取回的当页数据上直接筛选, 暂无需
 /// 后端新增查询维度(见本任务报告"疑虑"一节)
-pub fn search(conn: &Connection, query: &Query) -> Result<(Vec<MarketResource>, i64)> {
+pub fn search(conn: &Connection, query: &Query) -> Result<(Vec<MarketResourceRespVO>, i64)> {
 	Ok(repo_market::query(conn, query)?)
 }
 
 /// 按 (source_type, ext_id) 查询单条市场资源详情, 直接转调 repo_market::get, 不存在返回 None
-pub fn detail(conn: &Connection, source_type: i64, ext_id: &str) -> Result<Option<MarketResource>> {
+pub fn detail(
+	conn: &Connection,
+	source_type: i64,
+	ext_id: &str,
+) -> Result<Option<MarketResourceRespVO>> {
 	Ok(repo_market::get(conn, source_type, ext_id)?)
 }
 
@@ -153,12 +157,12 @@ pub fn detail(conn: &Connection, source_type: i64, ext_id: &str) -> Result<Optio
 /// source_type 在 sources 里找不到匹配 id(理论不会发生: 三源均覆盖 SourceId 全部三个变体, 除非
 /// 调用方注入了残缺的源列表)时返回 Err; cached_detail 通常是此前 detail() 查到的完整市场资源
 /// 记录, 其 install_manifest 决定 fetch_payload 具体怎么拉。http_client 同 fetch_all, 由调用方
-/// 传入(生产用依当前 Settings 构造的客户端, 使代理/超时真正生效)
+/// 传入(生产用依当前 SettingRespVO 构造的客户端, 使代理/超时真正生效)
 pub async fn fetch_install_payload(
 	sources: &[Box<dyn SourceProvider>],
 	source_type: i64,
 	token: Option<&str>,
-	cached_detail: &MarketResource,
+	cached_detail: &MarketResourceRespVO,
 	http_client: &reqwest::Client,
 ) -> Result<InstallPayload> {
 	let target_id = SourceId::from_i64(source_type);
@@ -224,7 +228,7 @@ fn write_skill_files(data_dir: &Path, safe_name: &str, files: &[FileEntry]) -> R
 }
 
 /// 把 McpServerDef 转为落地到 data_dir/mcp/<name>.json 的 JSON 对象: 不写 name(定义文件内部不
-/// 重复携带 name, 由 Resource.name 承担, 与 services::sync::resource_to_desired/
+/// 重复携带 name, 由 ResourceRespVO.name 承担, 与 services::sync::resource_to_desired/
 /// parse_single_mcp_def 的既有读取约定一致); 有 command 才写 command/args/env, 有 url 才写 url。
 /// 与 infra::adapter::json_mcp::mcp_def_to_json 同一惯例, 各自独立维护一份(体量小, 不值得跨层
 /// 共享, 呼应该文件"各 provider 模块各自独立维护一份"的既有约定)
@@ -280,7 +284,7 @@ pub(crate) fn write_mcp_def(
 	Ok(target)
 }
 
-/// 把 fetch_install_payload 拉回的安装内容落地到本地存储目录(data_dir)并登记为一条 Resource:
+/// 把 fetch_install_payload 拉回的安装内容落地到本地存储目录(data_dir)并登记为一条 ResourceRespVO:
 /// Skill 把 payload 携带的全部文件写到 data_dir/skills/<name>/(整树覆盖, 与 services::library::
 /// import_skill "重复安装同名 Skill 不做增量合并"的既有惯例一致); Mcp 用 env_overrides 覆盖
 /// server_def.env 里的同名键后生成单定义 data_dir/mcp/<name>.json(不重复携带 name, 与
@@ -289,14 +293,14 @@ pub(crate) fn write_mcp_def(
 /// 已作为空串占位写进 server_def.env, 见 infra::source::github_mcp::build_server_def 文档), 本
 /// 函数不再区分, 统一按 Mcp 分支处理。source_type 按来源换算 Official/ThirdParty(见
 /// resource_source_type 文档), 落库(repo_resource::insert)后追加一条"下载"活动(act_type=3),
-/// 最终回查完整 Resource 返回
+/// 最终回查完整 ResourceRespVO 返回
 pub fn write_installed(
 	conn: &Connection,
 	data_dir: &Path,
-	detail: &MarketResource,
+	detail: &MarketResourceRespVO,
 	payload: InstallPayload,
 	env_overrides: &BTreeMap<String, String>,
-) -> Result<Resource> {
+) -> Result<ResourceRespVO> {
 	let safe_name = sanitize_path_segment(&detail.name);
 	let local_path = match payload {
 		InstallPayload::Skill { files } => write_skill_files(data_dir, &safe_name, &files)?,
@@ -331,7 +335,7 @@ pub fn write_installed(
 
 /// 便捷组合: 先按 (source_type, ext_id) 查市场缓存详情, 再异步拉取安装内容(fetch_install_payload,
 /// 不接触数据库), 最后同步落地入库(write_installed), 一次调用完成整个安装流程, 返回落库后的完整
-/// Resource。供不受 Tauri 命令 Send 约束的调用方使用(本模块测试、未来可能的后台任务);
+/// ResourceRespVO。供不受 Tauri 命令 Send 约束的调用方使用(本模块测试、未来可能的后台任务);
 /// commands::market::market_install 出于 Send 约束(见文件头注释"关于拆分")改为三段式调用(查详情
 /// 持锁 -> 异步拉取不持锁 -> 落库持锁), 不使用本函数。ext_id 对应的市场资源不存在时返回 Err。
 /// http_client 同 fetch_all, 由调用方传入; 新增该参数后入参数量超过 clippy 默认阈值, 均为
@@ -346,7 +350,7 @@ pub async fn install(
 	token: Option<&str>,
 	env_overrides: &BTreeMap<String, String>,
 	http_client: &reqwest::Client,
-) -> Result<Resource> {
+) -> Result<ResourceRespVO> {
 	let cached_detail = repo_market::get(conn, source_type, ext_id)?
 		.ok_or_else(|| anyhow!("市场资源不存在: source_type={source_type}, ext_id={ext_id}"))?;
 	let payload =
@@ -375,8 +379,8 @@ mod tests {
 		conn
 	}
 
-	fn sample_resource(source_type: SourceId, ext_id: &str) -> MarketResource {
-		MarketResource {
+	fn sample_resource(source_type: SourceId, ext_id: &str) -> MarketResourceRespVO {
+		MarketResourceRespVO {
 			source_type,
 			res_type: ResourceType::Skill,
 			ext_id: ext_id.to_string(),
@@ -416,7 +420,7 @@ mod tests {
 	struct FakeSource {
 		source_id: SourceId,
 		auth_kind: Option<AuthKind>,
-		result: Result<Vec<MarketResource>, String>,
+		result: Result<Vec<MarketResourceRespVO>, String>,
 		received_token: Arc<Mutex<Option<Option<String>>>>,
 		payload_result: Result<InstallPayload, String>,
 		received_fetch_token: Arc<Mutex<Option<Option<String>>>>,
@@ -439,7 +443,7 @@ mod tests {
 			_client: &Client,
 			_query: &Query,
 			token: Option<&str>,
-		) -> anyhow::Result<Vec<MarketResource>> {
+		) -> anyhow::Result<Vec<MarketResourceRespVO>> {
 			*self.received_token.lock().unwrap() = Some(token.map(str::to_string));
 			self.result.clone().map_err(|err| anyhow::anyhow!(err))
 		}
@@ -447,7 +451,7 @@ mod tests {
 		async fn fetch_payload(
 			&self,
 			_client: &Client,
-			_resource: &MarketResource,
+			_resource: &MarketResourceRespVO,
 			token: Option<&str>,
 		) -> anyhow::Result<InstallPayload> {
 			*self.received_fetch_token.lock().unwrap() = Some(token.map(str::to_string));
@@ -549,7 +553,7 @@ mod tests {
 	#[test]
 	fn write_refresh_results_sums_successful_items_and_skips_errors() {
 		let conn = setup_conn();
-		let outcomes: Vec<Result<Vec<MarketResource>>> = vec![
+		let outcomes: Vec<Result<Vec<MarketResourceRespVO>>> = vec![
 			Ok(vec![sample_resource(SourceId::GithubSkills, "ext-1")]),
 			Err(anyhow::anyhow!("模拟来源失败")),
 			Ok(vec![
@@ -622,7 +626,7 @@ mod tests {
 
 	/// 与 sample_resource 同构, 但产出 Mcp 类资源(res_type/install_manifest 均替换), 供本节
 	/// 安装相关测试复用
-	fn sample_mcp_resource(source_type: SourceId, ext_id: &str) -> MarketResource {
+	fn sample_mcp_resource(source_type: SourceId, ext_id: &str) -> MarketResourceRespVO {
 		let mut resource = sample_resource(source_type, ext_id);
 		resource.res_type = ResourceType::Mcp;
 		resource.install_manifest = InstallManifest::Mcp {
@@ -650,7 +654,7 @@ mod tests {
 	}
 
 	// write_installed: Skill 类 payload 应把全部文件写到 data_dir/skills/<name>/(含嵌套子目录),
-	// 落库为对应 Resource, 并记一条"下载"活动(act_type=3)
+	// 落库为对应 ResourceRespVO, 并记一条"下载"活动(act_type=3)
 	#[test]
 	fn write_installed_persists_skill_files_and_records_resource_and_activity() {
 		let conn = setup_conn();

@@ -3,10 +3,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AuthAccount } from '@/api/auth';
+import type { AuthAccountRespVO } from '@/api/auth';
 import { AccountSection } from './account-section';
 
-function makeAccount(overrides: Partial<AuthAccount> = {}): AuthAccount {
+function makeAccount(overrides: Partial<AuthAccountRespVO> = {}): AuthAccountRespVO {
 	return {
 		id: 1,
 		provider: 'GitHub',

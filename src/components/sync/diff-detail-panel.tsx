@@ -12,13 +12,13 @@ import { SyncStatusBadge } from '@/components/common/sync-status-badge';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toResourceKind } from '@/components/installed/resource-display';
 import { TypeBadge } from '@/components/common/type-badge';
-import type { DiffAction, DiffItem, DiffPlan } from '@/api/sync';
+import type { DiffAction, DiffItem, DiffPlanRespVO } from '@/api/sync';
 import { countDiffByAction, filterDiffItems } from './agent-display';
 
 interface DiffDetailPanelProps {
 	/** 选中 Agent 的差异计划; undefined 表示尚未选中任何 Agent(或该 Agent 的 diff 还没加载完成,
 	 * 由 isLoading 区分) */
-	diffPlan: DiffPlan | undefined;
+	diffPlan: DiffPlanRespVO | undefined;
 	isLoading?: boolean;
 }
 

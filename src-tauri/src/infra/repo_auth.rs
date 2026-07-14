@@ -5,11 +5,11 @@
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
-use crate::domain::auth::{AuthAccount, ProviderKind};
+use crate::domain::auth::{AuthAccountRespVO, ProviderKind};
 
-/// 将一行查询结果映射为 AuthAccount 实体; keyring_ref 是纯基建字段, 不进入领域实体, 不在此还原
-fn row_to_auth_account(row: &Row) -> rusqlite::Result<AuthAccount> {
-	Ok(AuthAccount {
+/// 将一行查询结果映射为 AuthAccountRespVO 实体; keyring_ref 是纯基建字段, 不进入领域实体, 不在此还原
+fn row_to_auth_account(row: &Row) -> rusqlite::Result<AuthAccountRespVO> {
+	Ok(AuthAccountRespVO {
 		id: row.get(0)?,
 		provider: ProviderKind::from_i64(row.get(1)?),
 		account: row.get(2)?,
@@ -21,8 +21,12 @@ fn row_to_auth_account(row: &Row) -> rusqlite::Result<AuthAccount> {
 
 /// 按 (provider, account) 唯一键(uk_auth_account_prov_acc)插入或冲突更新, 返回该行主键 id
 /// (无论本次是插入还是更新, 以此为准; item.id 由调用方随意填充, 不参与本次写入)。keyring_ref
-/// 单独传参(不在 AuthAccount 领域实体里), 令牌密文本身绝不经此函数落库, 只落这一引用键
-pub fn upsert(conn: &Connection, item: &AuthAccount, keyring_ref: &str) -> rusqlite::Result<i64> {
+/// 单独传参(不在 AuthAccountRespVO 领域实体里), 令牌密文本身绝不经此函数落库, 只落这一引用键
+pub fn upsert(
+	conn: &Connection,
+	item: &AuthAccountRespVO,
+	keyring_ref: &str,
+) -> rusqlite::Result<i64> {
 	conn.execute(
 		"INSERT INTO auth_account (provider, account, scope, keyring_ref, status, connect_time) \
 		 VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
@@ -46,7 +50,7 @@ pub fn upsert(conn: &Connection, item: &AuthAccount, keyring_ref: &str) -> rusql
 }
 
 /// 查询全部已连接账号, 按 id 升序
-pub fn list(conn: &Connection) -> rusqlite::Result<Vec<AuthAccount>> {
+pub fn list(conn: &Connection) -> rusqlite::Result<Vec<AuthAccountRespVO>> {
 	let mut stmt = conn.prepare(
 		"SELECT id, provider, account, scope, status, connect_time FROM auth_account ORDER BY id",
 	)?;
@@ -57,7 +61,10 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<AuthAccount>> {
 /// 按 provider 查询账号; 表仅约束 (provider, account) 唯一, 同一 provider 理论上可存在多个
 /// 账号, 此处返回最近一条(id 最大, 即最近一次 upsert 命中/新建的账号), 需要全部请用 list 自行
 /// 按 provider 过滤。不存在返回 None
-pub fn get_by_provider(conn: &Connection, provider: i64) -> rusqlite::Result<Option<AuthAccount>> {
+pub fn get_by_provider(
+	conn: &Connection,
+	provider: i64,
+) -> rusqlite::Result<Option<AuthAccountRespVO>> {
 	conn.query_row(
 		"SELECT id, provider, account, scope, status, connect_time FROM auth_account \
 		 WHERE provider = ?1 ORDER BY id DESC LIMIT 1",
@@ -87,8 +94,8 @@ mod tests {
 		conn
 	}
 
-	fn sample_account() -> AuthAccount {
-		AuthAccount {
+	fn sample_account() -> AuthAccountRespVO {
+		AuthAccountRespVO {
 			id: 0,
 			provider: ProviderKind::GitHub,
 			account: "demo@example.com".to_string(),
@@ -98,7 +105,7 @@ mod tests {
 		}
 	}
 
-	// upsert -> get_by_provider 应还原全部领域字段; keyring_ref 不进入 AuthAccount, 单独白盒校验落库
+	// upsert -> get_by_provider 应还原全部领域字段; keyring_ref 不进入 AuthAccountRespVO, 单独白盒校验落库
 	#[test]
 	fn upsert_then_get_by_provider_round_trips_fields() {
 		let conn = setup_conn();

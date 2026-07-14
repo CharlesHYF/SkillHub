@@ -7,7 +7,12 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { libraryList, resourceDelete, resourceSetEnabled, type Resource } from '@/api/library';
+import {
+	libraryList,
+	resourceDelete,
+	resourceSetEnabled,
+	type ResourceRespVO,
+} from '@/api/library';
 import { agentList } from '@/api/agent';
 import { resourceAgentLinks, syncApply } from '@/api/sync';
 import { PageHeader } from '@/components/common/page-header';
@@ -35,7 +40,7 @@ export default function Installed() {
 		setKeyword,
 		setSelectedResourceId,
 	} = useUiStore();
-	const [pendingDelete, setPendingDelete] = useState<Resource | null>(null);
+	const [pendingDelete, setPendingDelete] = useState<ResourceRespVO | null>(null);
 
 	const resourcesQuery = useQuery({
 		queryKey: [LIBRARY_LIST_KEY, typeFilter, keyword],
@@ -90,12 +95,13 @@ export default function Installed() {
 	}
 
 	const toggleEnabledMutation = useMutation({
-		mutationFn: (resource: Resource) => resourceSetEnabled(resource.id, !resource.enabled),
+		mutationFn: (resource: ResourceRespVO) =>
+			resourceSetEnabled(resource.id, !resource.enabled),
 		onSuccess: invalidateResourceQueries,
 	});
 
 	const deleteMutation = useMutation({
-		mutationFn: (resource: Resource) => resourceDelete(resource.id),
+		mutationFn: (resource: ResourceRespVO) => resourceDelete(resource.id),
 		onSuccess: (_result, resource) => {
 			invalidateResourceQueries();
 			if (selectedResourceId === resource.id) setSelectedResourceId(null);

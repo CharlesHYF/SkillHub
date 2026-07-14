@@ -1,7 +1,7 @@
 // 文件作用: Marketplace 展示态派生逻辑单测(来源编码互转/星标数格式化/安装要求/认证说明)
 // 创建日期: 2026-07-10
 import { describe, it, expect } from 'vitest';
-import type { MarketResource } from '@/api/market';
+import type { MarketResourceRespVO } from '@/api/market';
 import {
 	sourceTypeToCode,
 	toResourceKind,
@@ -14,7 +14,7 @@ import {
 	marketResourceKey,
 } from './market-display';
 
-function makeMarketResource(overrides: Partial<MarketResource> = {}): MarketResource {
+function makeMarketResource(overrides: Partial<MarketResourceRespVO> = {}): MarketResourceRespVO {
 	return {
 		sourceType: 'GithubSkills',
 		resType: 'Skill',

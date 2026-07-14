@@ -7,9 +7,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn(),
 }));
 
-import { settingsGet, settingsSave, appVersion, type Settings } from './setting';
+import { settingsGet, settingsSave, appVersion, type SettingRespVO } from './setting';
 
-const sampleSettings: Settings = {
+const sampleSettings: SettingRespVO = {
 	storageSkillDir: '/Users/demo/.skillhub/skills',
 	storageMcpDir: '/Users/demo/.skillhub/mcp',
 	syncAutoNewAgent: true,
@@ -25,7 +25,7 @@ const sampleSettings: Settings = {
 };
 
 describe('setting api', () => {
-	it('settingsGet 应以 command 名 settings_get 调用且不带参数, 返回 Settings', async () => {
+	it('settingsGet 应以 command 名 settings_get 调用且不带参数, 返回 SettingRespVO', async () => {
 		vi.mocked(invoke).mockResolvedValueOnce(sampleSettings);
 
 		const got = await settingsGet();
@@ -34,8 +34,8 @@ describe('setting api', () => {
 		expect(vi.mocked(invoke)).toHaveBeenCalledWith('settings_get');
 	});
 
-	it('settingsSave 应以 command 名 settings_save 调用并传 { settings }, 返回保存后的 Settings', async () => {
-		const edited: Settings = { ...sampleSettings, netTimeoutSec: 60, netProxyMode: 2 };
+	it('settingsSave 应以 command 名 settings_save 调用并传 { settings }, 返回保存后的 SettingRespVO', async () => {
+		const edited: SettingRespVO = { ...sampleSettings, netTimeoutSec: 60, netProxyMode: 2 };
 		vi.mocked(invoke).mockResolvedValueOnce(edited);
 
 		const got = await settingsSave(edited);

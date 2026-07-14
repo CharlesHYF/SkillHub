@@ -1,4 +1,4 @@
-// 文件作用: 认证领域类型 —— ProviderKind 提供方枚举、AuthAccount 已连接账号实体, 以及绝不落库
+// 文件作用: 认证领域类型 —— ProviderKind 提供方枚举、AuthAccountRespVO 已连接账号实体, 以及绝不落库
 //           的 TokenSet/PkceChallenge(令牌只进系统钥匙串, 见 migrations/0001_init.sql
 //           auth_account 表注释与 infra::repo_auth)
 // 创建日期: 2026-07-09
@@ -42,7 +42,7 @@ impl From<ProviderKind> for i64 {
 /// 只有钥匙串引用键(keyring_ref)单独传参, 见 infra::repo_auth::upsert
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct AuthAccount {
+pub struct AuthAccountRespVO {
 	pub id: i64,
 	pub provider: ProviderKind,
 	pub account: String,
@@ -118,10 +118,10 @@ mod tests {
 		assert_eq!(ProviderKind::from_i64(99), ProviderKind::GitHub);
 	}
 
-	// AuthAccount: 序列化应使用 camelCase 字段名(connectTime), 且能通过 JSON 往返完整还原
+	// AuthAccountRespVO: 序列化应使用 camelCase 字段名(connectTime), 且能通过 JSON 往返完整还原
 	#[test]
 	fn auth_account_round_trips_through_json_with_camel_case_fields() {
-		let account = AuthAccount {
+		let account = AuthAccountRespVO {
 			id: 1,
 			provider: ProviderKind::GitHub,
 			account: "demo@example.com".to_string(),
@@ -134,7 +134,7 @@ mod tests {
 		assert_eq!(json["provider"], "GitHub");
 		assert!(json.get("connect_time").is_none());
 
-		let back: AuthAccount =
+		let back: AuthAccountRespVO =
 			serde_json::from_str(&serde_json::to_string(&account).unwrap()).unwrap();
 		assert_eq!(back, account);
 	}

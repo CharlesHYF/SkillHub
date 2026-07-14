@@ -5,7 +5,7 @@
 // 创建日期: 2026-07-10
 import { CircleHelp, Download, FolderOpen } from 'lucide-react';
 
-import type { ExportOptions } from '@/api/portability';
+import type { ExportReqVO } from '@/api/portability';
 import { FORMAT_OPTIONS, SCOPE_OPTIONS } from './impexp-display';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,8 +15,8 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface ExportPanelProps {
-	options: ExportOptions;
-	onOptionsChange: (options: ExportOptions) => void;
+	options: ExportReqVO;
+	onOptionsChange: (options: ExportReqVO) => void;
 	/** 导出目标路径(可直接在文本框输入, 或点"选择保存位置"经原生对话框拿路径后回填) */
 	outPath: string;
 	onOutPathChange: (path: string) => void;
@@ -54,7 +54,7 @@ export function ExportPanel({
 	onExport,
 	isExporting,
 }: ExportPanelProps) {
-	function patch(next: Partial<ExportOptions>) {
+	function patch(next: Partial<ExportReqVO>) {
 		onOptionsChange({ ...options, ...next });
 	}
 
@@ -98,7 +98,7 @@ export function ExportPanel({
 					<RadioGroup
 						value={String(options.scope)}
 						onValueChange={(value) =>
-							patch({ scope: Number(value) as ExportOptions['scope'] })
+							patch({ scope: Number(value) as ExportReqVO['scope'] })
 						}
 						className="flex items-center gap-4"
 						aria-label="选择导出范围"
@@ -117,7 +117,7 @@ export function ExportPanel({
 					<RadioGroup
 						value={String(options.format)}
 						onValueChange={(value) =>
-							patch({ format: Number(value) as ExportOptions['format'] })
+							patch({ format: Number(value) as ExportReqVO['format'] })
 						}
 						className="flex items-center gap-4"
 						aria-label="目标文件格式"

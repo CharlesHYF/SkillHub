@@ -101,7 +101,7 @@ pub fn count_agents_for_resource(conn: &Connection, resource_id: i64) -> rusqlit
 /// 避免逐资源 N+1 查询(命令层见 commands::sync::resource_agent_links)
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ResourceAgentLink {
+pub struct ResourceAgentLinkRespVO {
 	pub resource_id: i64,
 	pub agent_id: i64,
 	pub agent_name: String,
@@ -109,7 +109,7 @@ pub struct ResourceAgentLink {
 
 /// 一次性查询全部资源的关联 Agent(仅 desired=1), 按 resource_id, agent_id 升序; 调用方按需
 /// 用 resource_id 分组统计数量, 或按选中的 resource_id 过滤取展示列表
-pub fn list_all_links(conn: &Connection) -> rusqlite::Result<Vec<ResourceAgentLink>> {
+pub fn list_all_links(conn: &Connection) -> rusqlite::Result<Vec<ResourceAgentLinkRespVO>> {
 	let mut stmt = conn.prepare(
 		"SELECT ra.resource_id, a.id, a.name \
 		 FROM resource_agent ra \
@@ -118,7 +118,7 @@ pub fn list_all_links(conn: &Connection) -> rusqlite::Result<Vec<ResourceAgentLi
 		 ORDER BY ra.resource_id, a.id",
 	)?;
 	let rows = stmt.query_map([], |row| {
-		Ok(ResourceAgentLink {
+		Ok(ResourceAgentLinkRespVO {
 			resource_id: row.get(0)?,
 			agent_id: row.get(1)?,
 			agent_name: row.get(2)?,

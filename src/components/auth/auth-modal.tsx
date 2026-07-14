@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { AppWindow, Check, Code2, Globe, KeyRound, Lock } from 'lucide-react';
 
-import { authEnterToken, authLogin, type AuthAccount } from '@/api/auth';
+import { authEnterToken, authLogin, type AuthAccountRespVO } from '@/api/auth';
 import { INSTALL_PERMISSIONS } from './auth-display';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -35,7 +35,7 @@ interface AuthModalProps {
 	 * 按钮与令牌选项始终全部可选, 不因此限制可选项 */
 	defaultProvider?: number;
 	/** 任一方式认证成功后回调(携带入库账号), 调用方应据此关闭弹窗并重试安装 */
-	onAuthenticated: (account: AuthAccount) => void;
+	onAuthenticated: (account: AuthAccountRespVO) => void;
 }
 
 /** 应用内认证弹窗: 还原原型第 3 屏的"需要登录"弹层 —— GitHub/Google/Microsoft 一键登录 +

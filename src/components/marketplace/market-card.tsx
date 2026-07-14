@@ -3,17 +3,17 @@
 // 创建日期: 2026-07-10
 import { BadgeCheck, Sparkles, Plug, Star } from 'lucide-react';
 
-import type { MarketResource } from '@/api/market';
+import type { MarketResourceRespVO } from '@/api/market';
 import { TypeBadge } from '@/components/common/type-badge';
 import { Button } from '@/components/ui/button';
 import { formatStars, formatVersion, toResourceKind } from './market-display';
 
 interface MarketCardProps {
-	resource: MarketResource;
+	resource: MarketResourceRespVO;
 	/** 当前卡片是否为详情面板正在展示的选中项 */
 	selected: boolean;
-	onSelect: (resource: MarketResource) => void;
-	onDownload: (resource: MarketResource) => void;
+	onSelect: (resource: MarketResourceRespVO) => void;
+	onDownload: (resource: MarketResourceRespVO) => void;
 	/** 该资源最近一次下载安装失败的提示文案; 非空时展示在卡片底部 */
 	installError?: string;
 }

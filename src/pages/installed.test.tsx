@@ -5,9 +5,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Resource } from '@/api/library';
-import type { AgentRow } from '@/api/agent';
-import type { ResourceAgentLink } from '@/api/sync';
+import type { ResourceRespVO } from '@/api/library';
+import type { AgentRespVO } from '@/api/agent';
+import type { ResourceAgentLinkRespVO } from '@/api/sync';
 import { useUiStore } from '@/stores/ui';
 import Installed from './installed';
 
@@ -28,7 +28,7 @@ import { libraryList, resourceDelete } from '@/api/library';
 import { resourceAgentLinks, syncApply } from '@/api/sync';
 import { agentList } from '@/api/agent';
 
-function makeResource(overrides: Partial<Resource> = {}): Resource {
+function makeResource(overrides: Partial<ResourceRespVO> = {}): ResourceRespVO {
 	const name = overrides.name ?? 'data-visualizer';
 	return {
 		id: 1,
@@ -123,7 +123,7 @@ describe('Installed 页面', () => {
 	it('同步到全部 Agent 只对在线 Agent 调用 sync_apply', async () => {
 		const resource = makeResource({ id: 1, name: 'data-visualizer' });
 		vi.mocked(libraryList).mockResolvedValue([resource]);
-		const agents: AgentRow[] = [
+		const agents: AgentRespVO[] = [
 			{
 				id: 10,
 				agentKind: 'ClaudeCode',
@@ -148,7 +148,7 @@ describe('Installed 页面', () => {
 			},
 		];
 		vi.mocked(agentList).mockResolvedValue(agents);
-		const links: ResourceAgentLink[] = [
+		const links: ResourceAgentLinkRespVO[] = [
 			{ resourceId: 1, agentId: 10, agentName: 'Claude Code' },
 		];
 		vi.mocked(resourceAgentLinks).mockResolvedValue(links);

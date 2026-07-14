@@ -30,7 +30,7 @@ use crate::services::sync::{agent_row_to_detected, find_adapter};
 /// (commands::library::library_import_from_agents)直接返回给前端
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ImportFromAgentsOutcome {
+pub struct ImportFromAgentsOutcomeRespVO {
 	/// 本次新落地(此前库里没有同类型同名资源)并写入 resource 表的条数
 	pub imported: i64,
 	/// 本次识别到、但库里已有同类型同名资源、故只复用/未重复落地的条数
@@ -55,7 +55,7 @@ pub struct ImportFromAgentsOutcome {
 /// read_state 得到的实际态本身(逐字段照抄/原样复制), 故随后 services::sync::diff_for_agent
 /// 重新计算差异时, 期望态(来自刚落库的 resource)与实际态(仍是同一份, 未被改动)理应完全一致
 /// (MCP 按 McpServerDef 全字段比较, Skill 按 version 比较, 见 domain::sync::reconcile), 产出
-/// 空 DiffPlan, 不会误触发对 Agent 的写回(见本模块测试
+/// 空 DiffPlanRespVO, 不会误触发对 Agent 的写回(见本模块测试
 /// `import_from_agents_does_not_trigger_sync_write_back` 的端到端验证)。
 ///
 /// 单 Agent 读取失败(如配置文件本身已损坏)不拖累其它 Agent, 静默跳过该 Agent(呼应 adapter 层
@@ -65,7 +65,7 @@ pub fn import_from_agents(
 	conn: &Connection,
 	home: &Path,
 	data_dir: &Path,
-) -> Result<ImportFromAgentsOutcome> {
+) -> Result<ImportFromAgentsOutcomeRespVO> {
 	let agent_rows = repo_agent::list(conn)?;
 	let adapters = all_adapters(home);
 	let mut imported = 0i64;
@@ -100,7 +100,7 @@ pub fn import_from_agents(
 		}
 	}
 
-	Ok(ImportFromAgentsOutcome {
+	Ok(ImportFromAgentsOutcomeRespVO {
 		imported,
 		skipped,
 		agents: agent_rows.len() as i64,
@@ -282,7 +282,7 @@ mod tests {
 
 	// import_from_agents: 端到端 —— 2 个 Agent(ClaudeCode+Cursor), 各带 1 条 mcp + 1 个 Skill,
 	// 均为库中此前不存在的新资源: 应各自落地内容到 data_dir、写入 resource 表(source=AgentImport)、
-	// 与各自 Agent 建立 desired 关联; ImportFromAgentsOutcome 应报告 imported=4/skipped=0/agents=2
+	// 与各自 Agent 建立 desired 关联; ImportFromAgentsOutcomeRespVO 应报告 imported=4/skipped=0/agents=2
 	#[test]
 	fn import_from_agents_lands_new_resources_and_associates_owning_agents() {
 		let home = tempdir().unwrap();
@@ -294,7 +294,7 @@ mod tests {
 
 		assert_eq!(
 			outcome,
-			ImportFromAgentsOutcome {
+			ImportFromAgentsOutcomeRespVO {
 				imported: 4,
 				skipped: 0,
 				agents: 2,
@@ -383,7 +383,7 @@ mod tests {
 		let second = import_from_agents(&conn, home.path(), data_dir.path()).unwrap();
 		assert_eq!(
 			second,
-			ImportFromAgentsOutcome {
+			ImportFromAgentsOutcomeRespVO {
 				imported: 0,
 				skipped: 4,
 				agents: 2,
@@ -439,7 +439,7 @@ mod tests {
 
 		assert_eq!(
 			outcome,
-			ImportFromAgentsOutcome {
+			ImportFromAgentsOutcomeRespVO {
 				imported: 1,
 				skipped: 1,
 				agents: 2,
@@ -462,7 +462,7 @@ mod tests {
 
 	// import_from_agents: 落库的内容与关联均取自 Agent 的实际态本身(逐字段照抄), 不应改动任何
 	// Agent 的配置文件 —— 导入后针对该 Agent 重新计算差异(services::sync::diff_for_agent), 应
-	// 产出空 DiffPlan(desired 与 actual 完全一致, 无 Add/Update/Remove), 证明"导入不触发同步写回"
+	// 产出空 DiffPlanRespVO(desired 与 actual 完全一致, 无 Add/Update/Remove), 证明"导入不触发同步写回"
 	#[test]
 	fn import_from_agents_does_not_trigger_sync_write_back() {
 		let home = tempdir().unwrap();
@@ -503,7 +503,7 @@ mod tests {
 
 		assert_eq!(
 			outcome,
-			ImportFromAgentsOutcome {
+			ImportFromAgentsOutcomeRespVO {
 				imported: 0,
 				skipped: 0,
 				agents: 0,
@@ -511,10 +511,10 @@ mod tests {
 		);
 	}
 
-	// ImportFromAgentsOutcome: 序列化应使用 camelCase 字段名, 与前端契约一致
+	// ImportFromAgentsOutcomeRespVO: 序列化应使用 camelCase 字段名, 与前端契约一致
 	#[test]
 	fn import_from_agents_outcome_serializes_as_camel_case() {
-		let outcome = ImportFromAgentsOutcome {
+		let outcome = ImportFromAgentsOutcomeRespVO {
 			imported: 1,
 			skipped: 2,
 			agents: 3,

@@ -1,7 +1,7 @@
 // 文件作用: 卸载资源前的二次确认弹窗; resource 为 null 表示关闭态, 由调用方(pages/installed)
 //           持有"待卸载资源"这一状态, 本组件只负责展示确认文案与转发确认/取消
 // 创建日期: 2026-07-09
-import type { Resource } from '@/api/library';
+import type { ResourceRespVO } from '@/api/library';
 import { Button } from '@/components/ui/button';
 import {
 	Dialog,
@@ -14,7 +14,7 @@ import {
 
 interface UninstallDialogProps {
 	/** 待卸载的资源; null 表示对话框关闭 */
-	resource: Resource | null;
+	resource: ResourceRespVO | null;
 	onConfirm: () => void;
 	onCancel: () => void;
 	/** 是否正在执行卸载(禁用确认按钮 + 文案提示, 避免重复触发) */

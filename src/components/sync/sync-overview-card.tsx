@@ -4,8 +4,8 @@
 // 创建日期: 2026-07-09
 import { Copy, ListChecks, Minus, MousePointerClick, Plus, RefreshCw } from 'lucide-react';
 
-import type { AgentRow } from '@/api/agent';
-import type { SyncSummary } from '@/api/sync';
+import type { AgentRespVO } from '@/api/agent';
+import type { SyncSummaryRespVO } from '@/api/sync';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/common/empty-state';
@@ -23,11 +23,11 @@ function copyToClipboard(text: string) {
 
 interface SyncOverviewCardProps {
 	/** 选中的 Agent; null 表示尚未选中任何 Agent */
-	agent: AgentRow | null;
+	agent: AgentRespVO | null;
 	diffCounts: DiffCounts;
 	/** 本次会话内最近一次单独同步该 Agent 的结果; undefined 表示本次会话尚未同步过它
 	 * (后端未提供跨会话的同步历史查询命令, 见 agent-display.deriveAgentSyncStatus 的说明) */
-	lastOutcome?: SyncSummary;
+	lastOutcome?: SyncSummaryRespVO;
 }
 
 /** Sync Center 底部左侧同步概览面板: 选中 Agent 信息 + 新增/更新/移除/待同步总计 + 上次同步结果 */

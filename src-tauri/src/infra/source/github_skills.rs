@@ -1,5 +1,5 @@
 // 文件作用: github_skills 市场源 —— 聚合若干 GitHub 仓库下 skills_dir 内含 SKILL.md 的目录,
-//           解析其 YAML frontmatter(name/description/version)归一化为 MarketResource, 并在
+//           解析其 YAML frontmatter(name/description/version)归一化为 MarketResourceRespVO, 并在
 //           下载安装时递归拉取该 Skill 子目录下的全部文件, 实现 SourceProvider(见 infra::
 //           source::mod)。GitHub contents API 细节按官方 REST v3: 目录路径返回条目数组,
 //           文件路径返回单个对象(含 base64 content), 具体调用见 GithubCtx
@@ -13,7 +13,7 @@ use base64::prelude::*;
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::domain::market::{InstallManifest, MarketResource, Query, SourceId};
+use crate::domain::market::{InstallManifest, MarketResourceRespVO, Query, SourceId};
 use crate::domain::resource::ResourceType;
 use crate::infra::http::{get_json, HttpResult};
 
@@ -125,7 +125,7 @@ impl GithubCtx<'_> {
 	}
 
 	/// 拉取本仓库的星标数与最后一次 push 时间(GitHub repos API `GET /repos/{owner}/{repo}`);
-	/// 每个仓库在一次 search 里只调用一次, 供 search 施于该仓库下产出的全部 MarketResource,
+	/// 每个仓库在一次 search 里只调用一次, 供 search 施于该仓库下产出的全部 MarketResourceRespVO,
 	/// 而不是逐资源调用, 呼应"匿名限流 60 次/时, 严禁逐资源调用把额度打爆"的约束。请求失败
 	/// (网络错误/限流/非 2xx)时把 Err 交回调用方, 由调用方 unwrap_or_default() 兜底为
 	/// stars=0/pushed_at=空串(不劣于富化前"恒为 0/空串"的既有行为), 不让这一次额外调用连累
@@ -144,10 +144,10 @@ impl GithubCtx<'_> {
 /// 字段都标 #[serde(default)], 即便响应体意外缺失该字段也兜底为 0/空串而不是解析报错
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 struct RepoMeta {
-	/// 仓库星标数, 落库到 MarketResource.stars, 施于该仓库下的全部资源
+	/// 仓库星标数, 落库到 MarketResourceRespVO.stars, 施于该仓库下的全部资源
 	#[serde(default, rename = "stargazers_count")]
 	stars: i64,
-	/// 仓库最后一次 push 时间(ISO 8601), 落库到 MarketResource.updated_at, 施于该仓库下的
+	/// 仓库最后一次 push 时间(ISO 8601), 落库到 MarketResourceRespVO.updated_at, 施于该仓库下的
 	/// 全部资源; 用仓库级 push 时间而非逐资源的提交历史, 避免为每条资源单独查一次昂贵的
 	/// commits API
 	#[serde(default, rename = "pushed_at")]
@@ -241,7 +241,7 @@ impl SourceProvider for GithubSkillsProvider {
 	}
 
 	/// 遍历 repos 列表, 对每个仓库列出 skills_dir 下的子目录, 逐一尝试读取其 SKILL.md 并解析
-	/// frontmatter, 归一化为 MarketResource; 不含 SKILL.md 的子目录(fetch_file_content 出错,
+	/// frontmatter, 归一化为 MarketResourceRespVO; 不含 SKILL.md 的子目录(fetch_file_content 出错,
 	/// 如 404)视为"不是一个 Skill", 跳过而非让整次 search 失败。关键字/分类过滤留给聚合层
 	/// (services::market, Task 6), 本方法恒返回全量, query 参数暂未使用(签名与其它源统一)。
 	///
@@ -256,7 +256,7 @@ impl SourceProvider for GithubSkillsProvider {
 		client: &Client,
 		_query: &Query,
 		token: Option<&str>,
-	) -> Result<Vec<MarketResource>> {
+	) -> Result<Vec<MarketResourceRespVO>> {
 		let mut resources = Vec::new();
 		for repo_ref in &self.repos {
 			let ctx = GithubCtx {
@@ -295,7 +295,7 @@ impl SourceProvider for GithubSkillsProvider {
 					frontmatter.name.clone()
 				};
 
-				resources.push(MarketResource {
+				resources.push(MarketResourceRespVO {
 					source_type: SourceId::GithubSkills,
 					res_type: ResourceType::Skill,
 					ext_id: format!("{}/{}/{}", repo_ref.owner, repo_ref.repo, entry.path),
@@ -325,7 +325,7 @@ impl SourceProvider for GithubSkillsProvider {
 	async fn fetch_payload(
 		&self,
 		client: &Client,
-		resource: &MarketResource,
+		resource: &MarketResourceRespVO,
 		token: Option<&str>,
 	) -> Result<InstallPayload> {
 		let InstallManifest::Skill {
@@ -389,7 +389,7 @@ impl SourceProvider for GithubSkillsProvider {
 	}
 
 	/// 匿名可读公开仓库但受限流, 登录 GitHub 可提额/访问私有仓库; 具体某条资源是否强制要求
-	/// 认证见 MarketResource.auth_required(本源产出的资源恒为 false, 见 search 文档)
+	/// 认证见 MarketResourceRespVO.auth_required(本源产出的资源恒为 false, 见 search 文档)
 	fn auth_kind(&self) -> Option<AuthKind> {
 		Some(AuthKind::GitHub)
 	}
@@ -429,8 +429,8 @@ mod tests {
 		}
 	}
 
-	fn sample_market_resource(path: &str) -> MarketResource {
-		MarketResource {
+	fn sample_market_resource(path: &str) -> MarketResourceRespVO {
+		MarketResourceRespVO {
 			source_type: SourceId::GithubSkills,
 			res_type: ResourceType::Skill,
 			ext_id: format!("acme/demo-repo/{path}"),
@@ -476,7 +476,7 @@ mod tests {
 			.await;
 	}
 
-	// search: 应从 skills_dir 下的 2 个目录归一化出 2 条 MarketResource, 非目录条目
+	// search: 应从 skills_dir 下的 2 个目录归一化出 2 条 MarketResourceRespVO, 非目录条目
 	// (README.md)应被过滤; name/description/version/ext_id/install_manifest 均应正确;
 	// frontmatter 缺 name/version 时应回退目录名/空串
 	#[tokio::test]

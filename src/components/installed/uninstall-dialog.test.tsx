@@ -3,10 +3,10 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { Resource } from '@/api/library';
+import type { ResourceRespVO } from '@/api/library';
 import { UninstallDialog } from './uninstall-dialog';
 
-function makeResource(overrides: Partial<Resource> = {}): Resource {
+function makeResource(overrides: Partial<ResourceRespVO> = {}): ResourceRespVO {
 	const name = overrides.name ?? 'demo-skill';
 	return {
 		id: 1,

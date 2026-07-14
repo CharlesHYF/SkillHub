@@ -10,9 +10,9 @@ import { invoke } from '@tauri-apps/api/core';
  * 同一约定: 展示态用变体名字符串, 数值编码只用于 command 入参) */
 export type ProviderKind = 'GitHub' | 'Google' | 'Microsoft' | 'Token';
 
-/** 已连接的第三方账号, 与后端 domain::auth::AuthAccount 一一对应(该结构体标了
+/** 已连接的第三方账号, 与后端 domain::auth::AuthAccountRespVO 一一对应(该结构体标了
  * #[serde(rename_all = "camelCase")], 故 connect_time -> connectTime) */
-export interface AuthAccount {
+export interface AuthAccountRespVO {
 	id: number;
 	provider: ProviderKind;
 	account: string;
@@ -22,20 +22,20 @@ export interface AuthAccount {
 }
 
 /** 列出全部已连接账号 */
-export async function authAccounts(): Promise<AuthAccount[]> {
-	return invoke<AuthAccount[]>('auth_accounts');
+export async function authAccounts(): Promise<AuthAccountRespVO[]> {
+	return invoke<AuthAccountRespVO[]>('auth_accounts');
 }
 
 /** 应用内 OAuth 弹窗登录: provider 为数值编码(1-GitHub, 2-Google, 3-Microsoft; 4-Token 没有
  * 对应的 OAuth 授权页, 应改用 authEnterToken, 见后端 commands::auth::auth_login 的显式拒绝)。
  * 登录过程在 SkillHub 内部的二级窗口完成(本地 loopback 回调, 不跳出应用), 成功后返回入库账号 */
-export async function authLogin(provider: number): Promise<AuthAccount> {
-	return invoke<AuthAccount>('auth_login', { provider });
+export async function authLogin(provider: number): Promise<AuthAccountRespVO> {
+	return invoke<AuthAccountRespVO>('auth_login', { provider });
 }
 
 /** 手动录入访问令牌(Personal Access Token): 后端先校验令牌有效性, 通过后落库并返回入库账号 */
-export async function authEnterToken(provider: number, token: string): Promise<AuthAccount> {
-	return invoke<AuthAccount>('auth_enter_token', { provider, token });
+export async function authEnterToken(provider: number, token: string): Promise<AuthAccountRespVO> {
+	return invoke<AuthAccountRespVO>('auth_enter_token', { provider, token });
 }
 
 /** 断开连接: 删库记录 + 系统钥匙串对应条目 */

@@ -1,4 +1,4 @@
-// 文件作用: 资源领域类型 —— ResourceType/SourceType 枚举与 Resource 实体,
+// 文件作用: 资源领域类型 —— ResourceType/SourceType 枚举与 ResourceRespVO 实体,
 //           提供与 resource 表 INTEGER 列的 i64 互转(见 migrations/0001_init.sql)
 // 创建日期: 2026-07-09
 
@@ -71,7 +71,7 @@ impl From<SourceType> for i64 {
 /// 资源实体: 对应 resource 表一行(SkillHub 托管的 Skill/MCP 元数据)
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Resource {
+pub struct ResourceRespVO {
 	pub id: i64,
 	pub res_type: ResourceType,
 	pub name: String,

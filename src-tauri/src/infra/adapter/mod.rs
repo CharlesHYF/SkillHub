@@ -24,7 +24,7 @@ use anyhow::Result;
 
 use crate::domain::agent::{ActualState, AgentKind, DetectedAgent};
 use crate::domain::resource::ResourceType;
-use crate::domain::sync::{DiffPlan, ItemOutcome};
+use crate::domain::sync::{DiffPlanRespVO, ItemOutcome};
 use codex::CodexAdapter;
 use hermes::HermesAdapter;
 use json_mcp::JsonMcpAdapter;
@@ -47,7 +47,7 @@ pub trait AgentAdapter {
 	fn read_state(&self, agent: &DetectedAgent) -> Result<ActualState>;
 
 	/// 把差异计划应用到该 Agent 的配置文件, 返回每一项的执行结果
-	fn apply(&self, agent: &DetectedAgent, plan: &DiffPlan) -> Result<Vec<ItemOutcome>>;
+	fn apply(&self, agent: &DetectedAgent, plan: &DiffPlanRespVO) -> Result<Vec<ItemOutcome>>;
 
 	/// 把本适配器对应工具里名为 `name` 的已装 Skill 内容导出到 `dest_dir`(统一整理为"含
 	/// SKILL.md 的目录"形态), 供 M6 Task BE-2(services::agent_import, 从已检测 Agent 反向导入
@@ -240,7 +240,11 @@ mod tests {
 			})
 		}
 
-		fn apply(&self, _agent: &DetectedAgent, _plan: &DiffPlan) -> Result<Vec<ItemOutcome>> {
+		fn apply(
+			&self,
+			_agent: &DetectedAgent,
+			_plan: &DiffPlanRespVO,
+		) -> Result<Vec<ItemOutcome>> {
 			Ok(Vec::new())
 		}
 
@@ -271,7 +275,7 @@ mod tests {
 		assert!(state.skills.is_empty());
 
 		let outcomes = adapter
-			.apply(&probe, &DiffPlan { items: Vec::new() })
+			.apply(&probe, &DiffPlanRespVO { items: Vec::new() })
 			.unwrap();
 		assert!(outcomes.is_empty());
 

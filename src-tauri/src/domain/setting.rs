@@ -1,9 +1,9 @@
-// 文件作用: 设置(Settings)领域类型 —— 存储目录/同步偏好/网络代理/更新通道的类型化表示,
+// 文件作用: 设置(SettingRespVO)领域类型 —— 存储目录/同步偏好/网络代理/更新通道的类型化表示,
 //           与 setting 表键值对(infra::repo_setting::SettingRow 的 cfg_key/cfg_value)双向
 //           映射(from_rows/to_pairs); serde camelCase 序列化与前端 src/api/setting.ts 的
-//           Settings 类型逐字段对齐(见 docs/superpowers/plans/2026-07-10-skillhub-m4-polish.md
+//           SettingRespVO 类型逐字段对齐(见 docs/superpowers/plans/2026-07-10-skillhub-m4-polish.md
 //           "设置契约"一节)。存储编码: bool 存 '0'/'1', i64 存十进制字符串, String 原样;
-//           解析(from_rows)时缺键或值非法一律回落 Settings::default() 对应字段, 不 panic,
+//           解析(from_rows)时缺键或值非法一律回落 SettingRespVO::default() 对应字段, 不 panic,
 //           呼应 domain::portability 里 BundleFormat/Scope/ConflictStrategy::from_i64 对
 //           "未知/脏数据一律兜底为合法默认值"的既有取舍
 // 创建日期: 2026-07-10
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::infra::repo_setting::SettingRow;
 
-/// setting 表 cfg_key 命名: 与前端 src/api/setting.ts Settings 字段逐一对应, 顺序同 to_pairs
+/// setting 表 cfg_key 命名: 与前端 src/api/setting.ts SettingRespVO 字段逐一对应, 顺序同 to_pairs
 const KEY_STORAGE_SKILL_DIR: &str = "storage.skill_dir";
 const KEY_STORAGE_MCP_DIR: &str = "storage.mcp_dir";
 const KEY_SYNC_AUTO_NEW_AGENT: &str = "sync.auto_new_agent";
@@ -35,7 +35,7 @@ const KEY_UPDATE_CHANNEL: &str = "update.channel";
 /// (update_channel)本轮仅持久化留用, 尚未接入对应的真实行为(目录迁移/同步流程钩子/更新器)
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Settings {
+pub struct SettingRespVO {
 	/// 本地 Skill 目录(cfg_key="storage.skill_dir"); 默认空串, 空串语义为"使用应用数据目录下
 	/// 默认位置"; 本轮仅持久化展示, 改动后对既有资源的迁移/重定位留待后续任务
 	pub storage_skill_dir: String,
@@ -64,11 +64,11 @@ pub struct Settings {
 	pub update_channel: i64,
 }
 
-impl Default for Settings {
+impl Default for SettingRespVO {
 	/// 契约约定的默认值(见 docs/superpowers/plans/2026-07-10-skillhub-m4-polish.md "设置契约");
 	/// 首次运行(setting 表为空)或任意字段缺键/非法时, from_rows 均回落到本实现
 	fn default() -> Self {
-		Settings {
+		SettingRespVO {
 			storage_skill_dir: String::new(),
 			storage_mcp_dir: String::new(),
 			sync_auto_new_agent: true,
@@ -121,13 +121,13 @@ fn encode_bool(value: bool) -> String {
 	(if value { "1" } else { "0" }).to_string()
 }
 
-impl Settings {
-	/// 由 setting 表全量行还原为 Settings: 逐字段按对应 cfg_key 查值并解码, 缺键或值非法均
-	/// 回落 Settings::default() 里对应字段的值(见 decode_bool/decode_i64/decode_string 各自
+impl SettingRespVO {
+	/// 由 setting 表全量行还原为 SettingRespVO: 逐字段按对应 cfg_key 查值并解码, 缺键或值非法均
+	/// 回落 SettingRespVO::default() 里对应字段的值(见 decode_bool/decode_i64/decode_string 各自
 	/// 文档), 因此本函数对任意输入(包括空切片、任意脏数据组合)恒不 panic、恒有确定结果
-	pub fn from_rows(rows: &[SettingRow]) -> Settings {
-		let fallback = Settings::default();
-		Settings {
+	pub fn from_rows(rows: &[SettingRow]) -> SettingRespVO {
+		let fallback = SettingRespVO::default();
+		SettingRespVO {
 			storage_skill_dir: decode_string(
 				find(rows, KEY_STORAGE_SKILL_DIR),
 				&fallback.storage_skill_dir,
@@ -164,7 +164,7 @@ impl Settings {
 		}
 	}
 
-	/// 把 Settings 拍平为 setting 表的 12 个键值对(cfg_key, cfg_value), 供 services::setting::
+	/// 把 SettingRespVO 拍平为 setting 表的 12 个键值对(cfg_key, cfg_value), 供 services::setting::
 	/// save 逐一 upsert; bool 编码为 '0'/'1'、i64 编码为十进制字符串、String 原样, 与
 	/// from_rows 的解码规则一一对称
 	pub fn to_pairs(&self) -> Vec<(String, String)> {
@@ -219,10 +219,10 @@ impl Settings {
 mod tests {
 	use super::*;
 
-	// Settings::default() 应精确给出"设置契约"一节约定的每个默认值
+	// SettingRespVO::default() 应精确给出"设置契约"一节约定的每个默认值
 	#[test]
 	fn default_settings_matches_contract() {
-		let d = Settings::default();
+		let d = SettingRespVO::default();
 		assert_eq!(d.storage_skill_dir, "");
 		assert_eq!(d.storage_mcp_dir, "");
 		assert!(d.sync_auto_new_agent);
@@ -295,7 +295,7 @@ mod tests {
 	// from_rows 应把一组完整的键值对逐一还原为对应字段, 不遗漏、不错位任何一个
 	#[test]
 	fn from_rows_restores_all_fields_from_full_rows() {
-		let settings = Settings::from_rows(&full_non_default_rows());
+		let settings = SettingRespVO::from_rows(&full_non_default_rows());
 		assert_eq!(settings.storage_skill_dir, "/data/skills");
 		assert_eq!(settings.storage_mcp_dir, "/data/mcp");
 		assert!(!settings.sync_auto_new_agent);
@@ -313,7 +313,7 @@ mod tests {
 	// from_rows 在完全没有任何行(如首次运行, migrations 只建表不预置行)时应整体回落默认值
 	#[test]
 	fn from_rows_falls_back_to_default_when_rows_empty() {
-		assert_eq!(Settings::from_rows(&[]), Settings::default());
+		assert_eq!(SettingRespVO::from_rows(&[]), SettingRespVO::default());
 	}
 
 	// from_rows 对缺失某个键的场景应只让该字段回落默认, 其余按已有行还原, 二者不相互影响
@@ -323,7 +323,7 @@ mod tests {
 			cfg_key: KEY_NET_TIMEOUT_SEC.to_string(),
 			cfg_value: "99".to_string(),
 		}];
-		let settings = Settings::from_rows(&rows);
+		let settings = SettingRespVO::from_rows(&rows);
 		assert_eq!(settings.net_timeout_sec, 99, "已提供的键应按值还原");
 		assert_eq!(settings.storage_skill_dir, "", "缺失键应回落默认值");
 		assert!(settings.sync_auto_new_agent, "缺失键应回落默认值 true");
@@ -336,10 +336,10 @@ mod tests {
 			cfg_key: KEY_SYNC_ONLY_ENABLED.to_string(),
 			cfg_value: "x".to_string(),
 		}];
-		let settings = Settings::from_rows(&rows);
+		let settings = SettingRespVO::from_rows(&rows);
 		assert_eq!(
 			settings.sync_only_enabled,
-			Settings::default().sync_only_enabled,
+			SettingRespVO::default().sync_only_enabled,
 			"非法 bool 值应回落默认值"
 		);
 	}
@@ -351,10 +351,10 @@ mod tests {
 			cfg_key: KEY_NET_TIMEOUT_SEC.to_string(),
 			cfg_value: "x".to_string(),
 		}];
-		let settings = Settings::from_rows(&rows);
+		let settings = SettingRespVO::from_rows(&rows);
 		assert_eq!(
 			settings.net_timeout_sec,
-			Settings::default().net_timeout_sec,
+			SettingRespVO::default().net_timeout_sec,
 			"非法数字值应回落默认值"
 		);
 	}
@@ -362,7 +362,7 @@ mod tests {
 	// to_pairs 应恰好输出全部 12 个键, 且 bool 编码为 '0'/'1'、i64 编码为十进制字符串
 	#[test]
 	fn to_pairs_encodes_exactly_twelve_keys_with_correct_encoding() {
-		let settings = Settings {
+		let settings = SettingRespVO {
 			storage_skill_dir: "/data/skills".to_string(),
 			storage_mcp_dir: "/data/mcp".to_string(),
 			sync_auto_new_agent: false,
@@ -394,37 +394,37 @@ mod tests {
 		assert_eq!(map[KEY_UPDATE_CHANNEL], "1");
 	}
 
-	// 往返: 把 to_pairs 的输出重新装回 SettingRow 再 from_rows, 应精确还原原始 Settings
+	// 往返: 把 to_pairs 的输出重新装回 SettingRow 再 from_rows, 应精确还原原始 SettingRespVO
 	// (覆盖非默认值场景, 逐字段互不相同, 足以暴露任何字段错位/编解码不对称的问题)
 	#[test]
 	fn from_rows_round_trips_through_to_pairs_for_non_default_settings() {
-		let original = Settings::from_rows(&full_non_default_rows());
+		let original = SettingRespVO::from_rows(&full_non_default_rows());
 		let rows: Vec<SettingRow> = original
 			.to_pairs()
 			.into_iter()
 			.map(|(cfg_key, cfg_value)| SettingRow { cfg_key, cfg_value })
 			.collect();
-		assert_eq!(Settings::from_rows(&rows), original);
+		assert_eq!(SettingRespVO::from_rows(&rows), original);
 	}
 
-	// 往返: 默认 Settings 同样应经 to_pairs -> from_rows 精确还原, 与上一测试互补覆盖
+	// 往返: 默认 SettingRespVO 同样应经 to_pairs -> from_rows 精确还原, 与上一测试互补覆盖
 	// "全部取默认值"这一边界
 	#[test]
 	fn from_rows_round_trips_through_to_pairs_for_default_settings() {
-		let original = Settings::default();
+		let original = SettingRespVO::default();
 		let rows: Vec<SettingRow> = original
 			.to_pairs()
 			.into_iter()
 			.map(|(cfg_key, cfg_value)| SettingRow { cfg_key, cfg_value })
 			.collect();
-		assert_eq!(Settings::from_rows(&rows), original);
+		assert_eq!(SettingRespVO::from_rows(&rows), original);
 	}
 
-	// Settings 序列化应使用 camelCase 字段名, 与前端 src/api/setting.ts Settings 类型对齐
-	// (吸取 M3 ImportOutcome 契约不符的教训, 显式核对每个字段名)
+	// SettingRespVO 序列化应使用 camelCase 字段名, 与前端 src/api/setting.ts SettingRespVO 类型对齐
+	// (吸取 M3 ImportOutcomeRespVO 契约不符的教训, 显式核对每个字段名)
 	#[test]
 	fn settings_serializes_with_camel_case_field_names() {
-		let settings = Settings::default();
+		let settings = SettingRespVO::default();
 		let json = serde_json::to_value(&settings).unwrap();
 		for key in [
 			"storageSkillDir",
@@ -448,7 +448,7 @@ mod tests {
 		);
 
 		let text = serde_json::to_string(&settings).unwrap();
-		let back: Settings = serde_json::from_str(&text).unwrap();
+		let back: SettingRespVO = serde_json::from_str(&text).unwrap();
 		assert_eq!(back, settings);
 	}
 }

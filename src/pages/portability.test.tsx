@@ -9,11 +9,11 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type {
-	ExportOptions,
-	ImportPreview,
-	ImpexpRow,
-	Manifest,
-	ImportOutcome,
+	ExportReqVO,
+	ImportPreviewRespVO,
+	ImpexpRespVO,
+	ManifestRespVO,
+	ImportOutcomeRespVO,
 } from '@/api/portability';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import Portability from './portability';
@@ -39,7 +39,7 @@ vi.mock('@/lib/dialog', () => ({
 import { exportBundle, importPreview, importBundle, impexpHistory } from '@/api/portability';
 import { pickSaveFile, pickOpenFile } from '@/lib/dialog';
 
-const defaultExportOptions: ExportOptions = {
+const defaultExportOptions: ExportReqVO = {
 	includeSkills: true,
 	includeMcp: true,
 	scope: 0,
@@ -48,7 +48,13 @@ const defaultExportOptions: ExportOptions = {
 	includeVersionLock: true,
 };
 
-const fullPreview: ImportPreview = { skill: 128, mcp: 45, config: 23, agent: 8, schemaOk: true };
+const fullPreview: ImportPreviewRespVO = {
+	skill: 128,
+	mcp: 45,
+	config: 23,
+	agent: 8,
+	schemaOk: true,
+};
 
 function renderPortability() {
 	const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -70,7 +76,7 @@ describe('Portability 页面', () => {
 				exportedAt: '2026-07-10 00:00:00',
 				counts: { skill: 128, mcp: 45, config: 23, agent: 8 },
 				checksums: {},
-			} satisfies Manifest);
+			} satisfies ManifestRespVO);
 		vi.mocked(importPreview).mockReset().mockResolvedValue(fullPreview);
 		vi.mocked(importBundle)
 			.mockReset()
@@ -79,7 +85,7 @@ describe('Portability 页面', () => {
 				skipped: 0,
 				renamed: 0,
 				status: 1,
-			} satisfies ImportOutcome);
+			} satisfies ImportOutcomeRespVO);
 		vi.mocked(impexpHistory).mockReset().mockResolvedValue([]);
 		vi.mocked(pickSaveFile).mockReset().mockResolvedValue(null);
 		vi.mocked(pickOpenFile).mockReset().mockResolvedValue(null);
@@ -224,7 +230,7 @@ describe('Portability 页面', () => {
 	});
 
 	it('历史表应渲染 impexpHistory 返回的记录', async () => {
-		const rows: ImpexpRow[] = [
+		const rows: ImpexpRespVO[] = [
 			{
 				id: 1,
 				direction: 0,

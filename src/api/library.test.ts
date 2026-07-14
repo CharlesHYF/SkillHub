@@ -15,10 +15,10 @@ import {
 	resourceSetEnabled,
 	resourceDelete,
 	libraryImportFromAgents,
-	type Resource,
+	type ResourceRespVO,
 } from './library';
 
-const sampleResource: Resource = {
+const sampleResource: ResourceRespVO = {
 	id: 1,
 	resType: 'Skill',
 	name: 'demo-skill',

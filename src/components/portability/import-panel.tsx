@@ -10,7 +10,7 @@ import { CircleHelp, CloudUpload, FolderOpen, Plug, Sparkles, Upload, Users } fr
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
-import type { ConflictStrategy, ImportPreview } from '@/api/portability';
+import type { ConflictStrategy, ImportPreviewRespVO } from '@/api/portability';
 import { CONFLICT_STRATEGY_OPTIONS } from './impexp-display';
 import { Skeleton } from '@/components/common/skeleton';
 import { Button } from '@/components/ui/button';
@@ -27,7 +27,7 @@ interface ImportPanelProps {
 	onPathChange: (path: string) => void;
 	/** "选择文件"按钮点击回调, 由 pages/portability 接 dialog.ts 的 pickOpenFile 实现 */
 	onBrowseFile: () => void;
-	preview: ImportPreview | undefined;
+	preview: ImportPreviewRespVO | undefined;
 	isPreviewLoading: boolean;
 	conflictStrategy: ConflictStrategy;
 	onConflictStrategyChange: (strategy: ConflictStrategy) => void;

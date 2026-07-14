@@ -3,11 +3,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ExportOptions } from '@/api/portability';
+import type { ExportReqVO } from '@/api/portability';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ExportPanel } from './export-panel';
 
-const baseOptions: ExportOptions = {
+const baseOptions: ExportReqVO = {
 	includeSkills: true,
 	includeMcp: true,
 	scope: 0,

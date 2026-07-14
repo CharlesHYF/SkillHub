@@ -8,7 +8,7 @@
 import { BadgeCheck, Sparkles, Plug, Star, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
-import type { MarketResource } from '@/api/market';
+import type { MarketResourceRespVO } from '@/api/market';
 import { DetailPanel } from '@/components/common/detail-panel';
 import { TypeBadge } from '@/components/common/type-badge';
 import { Badge } from '@/components/ui/badge';
@@ -25,9 +25,9 @@ import {
 } from './market-display';
 
 interface MarketDetailPanelProps {
-	resource: MarketResource;
+	resource: MarketResourceRespVO;
 	onClose: () => void;
-	onDownload: (resource: MarketResource) => void;
+	onDownload: (resource: MarketResourceRespVO) => void;
 	/** 是否正在执行"下载并安装"(禁用按钮 + 文案提示, 避免重复触发) */
 	isInstalling?: boolean;
 	/** 该资源最近一次安装失败的提示文案(如需要登录/授权的占位提示); 非空时展示在操作按钮上方 */
@@ -100,7 +100,7 @@ export function MarketDetailPanel({
 
 				<section>
 					<h3 className="mb-1.5 text-xs font-medium text-muted-foreground">兼容 Agent</h3>
-					{/* 当前领域模型(domain::market::MarketResource)未提供逐资源的 Agent 兼容性字段,
+					{/* 当前领域模型(domain::market::MarketResourceRespVO)未提供逐资源的 Agent 兼容性字段,
 					    也没有对应的后端查询维度; 原型截图中的"Agent Alpha/Beta/Gamma/Delta"本身即为
 					    示意性占位名(与真实 domain::agent::AgentKind 的产品名完全不同), 故这里如实
 					    展示"暂未接入"占位, 不虚构兼容列表, 见本任务报告"与原型差异"一节 */}

@@ -2,8 +2,8 @@
 //           在线状态徽标取值、diff 计划按 action 分组统计与过滤, 供 sync-center 页面与其子组件
 //           (agent-table/sync-overview-card/diff-detail-panel)共用, 避免同一套映射写多份
 // 创建日期: 2026-07-09
-import type { AgentKind, AgentRow } from '@/api/agent';
-import type { DiffAction, DiffItem, DiffPlan, SyncSummary } from '@/api/sync';
+import type { AgentKind, AgentRespVO } from '@/api/agent';
+import type { DiffAction, DiffItem, DiffPlanRespVO, SyncSummaryRespVO } from '@/api/sync';
 import type { SyncStatus } from '@/components/common/sync-status-badge';
 
 /** 当前 8 种已知 AgentKind(见后端 domain::agent::AgentKind)均为本机安装的 IDE/CLI 工具,
@@ -30,7 +30,7 @@ export function agentInstallKind(kind: AgentKind): AgentInstallKind {
 }
 
 /** 某 Agent 当前是否可参与真实同步: 需在线且为本地类型(远程 M1 只读展示, 不真正同步) */
-export function isAgentSyncable(agent: AgentRow): boolean {
+export function isAgentSyncable(agent: AgentRespVO): boolean {
 	return agent.status && agentInstallKind(agent.agentKind) === '本地';
 }
 
@@ -39,7 +39,10 @@ export function isAgentSyncable(agent: AgentRow): boolean {
  * 覆盖展示为"部分同步"(有成功也有失败)或"同步失败"(全失败), 否则展示"在线"。
  * lastOutcome 为 undefined 表示本次会话尚未对该 Agent 执行过同步(见 sync-center 页面
  * 的会话级"上次结果"追踪, 后端未提供跨会话的同步历史查询命令) */
-export function deriveAgentSyncStatus(agent: AgentRow, lastOutcome?: SyncSummary): SyncStatus {
+export function deriveAgentSyncStatus(
+	agent: AgentRespVO,
+	lastOutcome?: SyncSummaryRespVO,
+): SyncStatus {
 	if (!agent.status) return '离线';
 	if (lastOutcome && lastOutcome.failed > 0) {
 		return lastOutcome.success > 0 ? '部分同步' : '同步失败';
@@ -47,7 +50,7 @@ export function deriveAgentSyncStatus(agent: AgentRow, lastOutcome?: SyncSummary
 	return '在线';
 }
 
-/** 一个 DiffPlan 按 action 分组的统计, 供"同步概览"迷你卡片(新增/更新/移除/待同步总计) */
+/** 一个 DiffPlanRespVO 按 action 分组的统计, 供"同步概览"迷你卡片(新增/更新/移除/待同步总计) */
 export interface DiffCounts {
 	add: number;
 	update: number;
@@ -55,9 +58,9 @@ export interface DiffCounts {
 	total: number;
 }
 
-/** 统计某 DiffPlan 各 action 的条目数; plan 为 undefined(未选中 Agent 或该 Agent 的 diff
+/** 统计某 DiffPlanRespVO 各 action 的条目数; plan 为 undefined(未选中 Agent 或该 Agent 的 diff
  * 尚未加载完成)时全部记为 0, 不抛错 */
-export function countDiffByAction(plan: DiffPlan | undefined): DiffCounts {
+export function countDiffByAction(plan: DiffPlanRespVO | undefined): DiffCounts {
 	const items = plan?.items ?? [];
 	const add = items.filter((item) => item.action === 'Add').length;
 	const update = items.filter((item) => item.action === 'Update').length;
@@ -72,7 +75,7 @@ export function filterDiffItems(items: DiffItem[], action: DiffAction | 'All'): 
 
 /** 由一次 sync_apply 的结果汇总推导"结果"展示文案: 全部同步/部分同步/同步失败/暂无记录。
  * 供顶部"最近同步结果"统计卡与选中 Agent 概览面板的"上次结果"共用同一套措辞 */
-export function lastResultLabel(outcome: SyncSummary | undefined): string {
+export function lastResultLabel(outcome: SyncSummaryRespVO | undefined): string {
 	if (!outcome) return '暂无记录';
 	if (outcome.failed === 0) return '全部同步';
 	return outcome.success > 0 ? '部分同步' : '同步失败';

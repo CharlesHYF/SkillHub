@@ -3,12 +3,12 @@
 import { invoke } from '@tauri-apps/api/core';
 
 /** 应用健康信息 */
-export interface AppHealth {
+export interface AppHealthRespVO {
 	version: string;
 	dbOk: boolean;
 }
 
 /** 调用后端 app_health 命令 */
-export async function appHealth(): Promise<AppHealth> {
-	return invoke<AppHealth>('app_health');
+export async function appHealth(): Promise<AppHealthRespVO> {
+	return invoke<AppHealthRespVO>('app_health');
 }

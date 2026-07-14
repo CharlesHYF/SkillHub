@@ -2,10 +2,10 @@
 // 创建日期: 2026-07-09
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import type { AgentRow } from '@/api/agent';
+import type { AgentRespVO } from '@/api/agent';
 import { SyncOverviewCard } from './sync-overview-card';
 
-function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
+function makeAgent(overrides: Partial<AgentRespVO> = {}): AgentRespVO {
 	return {
 		id: 1,
 		agentKind: 'ClaudeCode',

@@ -2,8 +2,8 @@
 //           diff 计划按 action 分组统计、按 action 过滤)
 // 创建日期: 2026-07-09
 import { describe, it, expect } from 'vitest';
-import type { AgentKind, AgentRow } from '@/api/agent';
-import type { DiffItem, DiffPlan, SyncSummary } from '@/api/sync';
+import type { AgentKind, AgentRespVO } from '@/api/agent';
+import type { DiffItem, DiffPlanRespVO, SyncSummaryRespVO } from '@/api/sync';
 import {
 	agentInstallKind,
 	countDiffByAction,
@@ -13,7 +13,7 @@ import {
 	lastResultLabel,
 } from './agent-display';
 
-function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
+function makeAgent(overrides: Partial<AgentRespVO> = {}): AgentRespVO {
 	return {
 		id: 1,
 		agentKind: 'ClaudeCode',
@@ -79,7 +79,7 @@ describe('isAgentSyncable', () => {
 
 describe('deriveAgentSyncStatus', () => {
 	it('离线应展示"离线", 不论是否有历史同步结果', () => {
-		const bad: SyncSummary = { success: 0, failed: 1, skipped: 0 };
+		const bad: SyncSummaryRespVO = { success: 0, failed: 1, skipped: 0 };
 		expect(deriveAgentSyncStatus(makeAgent({ status: false }), bad)).toBe('离线');
 	});
 
@@ -88,24 +88,24 @@ describe('deriveAgentSyncStatus', () => {
 	});
 
 	it('在线且最近一次同步全部失败(success=0)应展示"同步失败"', () => {
-		const outcome: SyncSummary = { success: 0, failed: 2, skipped: 0 };
+		const outcome: SyncSummaryRespVO = { success: 0, failed: 2, skipped: 0 };
 		expect(deriveAgentSyncStatus(makeAgent({ status: true }), outcome)).toBe('同步失败');
 	});
 
 	it('在线且最近一次同步部分失败(success>0 且 failed>0)应展示"部分同步"', () => {
-		const outcome: SyncSummary = { success: 1, failed: 1, skipped: 0 };
+		const outcome: SyncSummaryRespVO = { success: 1, failed: 1, skipped: 0 };
 		expect(deriveAgentSyncStatus(makeAgent({ status: true }), outcome)).toBe('部分同步');
 	});
 
 	it('在线且最近一次同步全部成功应展示"在线"(非失败态不覆盖)', () => {
-		const outcome: SyncSummary = { success: 2, failed: 0, skipped: 0 };
+		const outcome: SyncSummaryRespVO = { success: 2, failed: 0, skipped: 0 };
 		expect(deriveAgentSyncStatus(makeAgent({ status: true }), outcome)).toBe('在线');
 	});
 });
 
 describe('countDiffByAction', () => {
 	it('应按 Add/Update/Remove 分组计数并给出 total', () => {
-		const plan: DiffPlan = {
+		const plan: DiffPlanRespVO = {
 			items: [
 				makeDiffItem({ action: 'Add', name: 'a' }),
 				makeDiffItem({ action: 'Add', name: 'b' }),

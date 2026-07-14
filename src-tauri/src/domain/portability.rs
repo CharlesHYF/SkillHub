@@ -1,5 +1,5 @@
-// 文件作用: 导入导出领域类型 —— BundleFormat/Scope/ConflictStrategy 枚举、导出选项(ExportOptions)、
-//           导出清单(Manifest/Counts)与导入预览(ImportPreview), 提供与 import_export_log 表
+// 文件作用: 导入导出领域类型 —— BundleFormat/Scope/ConflictStrategy 枚举、导出选项(ExportReqVO)、
+//           导出清单(ManifestRespVO/Counts)与导入预览(ImportPreviewRespVO), 提供与 import_export_log 表
 //           file_format 列一致的 i64 互转(见 migrations/0001_init.sql)
 // 创建日期: 2026-07-10
 
@@ -100,7 +100,7 @@ impl From<ConflictStrategy> for i64 {
 /// 导出选项: 前端"导出"面板的表单值, 驱动 services::portability::export_bundle 收集范围与打包格式
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ExportOptions {
+pub struct ExportReqVO {
 	pub include_skills: bool,
 	pub include_mcp: bool,
 	pub scope: Scope,
@@ -109,7 +109,7 @@ pub struct ExportOptions {
 	pub include_version_lock: bool,
 }
 
-/// 导出内容计数: 供 Manifest 与 ImportPreview 共用的资源类别统计
+/// 导出内容计数: 供 ManifestRespVO 与 ImportPreviewRespVO 共用的资源类别统计
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Counts {
@@ -120,13 +120,13 @@ pub struct Counts {
 }
 
 /// 导出清单: 打包产物内 manifest.json 的内容 —— schema 版本、导出时间、内容计数、各资源精确
-/// 版本(仅 ExportOptions.include_version_lock=true 时非空, 否则为空 map; 键为该资源在包内的
+/// 版本(仅 ExportReqVO.include_version_lock=true 时非空, 否则为空 map; 键为该资源在包内的
 /// 相对根路径, 如 "skills/demo-skill"/"mcp/demo-mcp.json", 与 checksums 同一路径体系, 见
 /// services::portability::export_bundle)、各文件 sha256 校验和(供导入时逐一比对, 见 M3 Task 3
 /// 的 parse_bundle 校验)
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Manifest {
+pub struct ManifestRespVO {
 	pub schema_version: i64,
 	pub exported_at: String,
 	pub counts: Counts,
@@ -137,7 +137,7 @@ pub struct Manifest {
 /// 导入预览: import_preview 命令返回给前端"将导入内容"面板的计数 + schema 兼容性判定结果
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ImportPreview {
+pub struct ImportPreviewRespVO {
 	pub skill: i64,
 	pub mcp: i64,
 	pub config: i64,
@@ -152,10 +152,10 @@ pub struct ImportPreview {
 /// status: 1-成功, 2-部分成功(如 agents.json 记录的某条关联在本机找不到同名 Agent, 尽力恢复
 /// 未能全部达成), 与 import_export_log.status 列同一套编码(见 infra::repo_impexp), 但本类型
 /// 不产出 0-失败取值 —— 解析/校验阶段的硬失败(schema 不兼容/校验和不符等)在 parse_bundle 阶段
-/// 就已经整体 Err, 根本不会走到产出 ImportOutcome 这一步
+/// 就已经整体 Err, 根本不会走到产出 ImportOutcomeRespVO 这一步
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ImportOutcome {
+pub struct ImportOutcomeRespVO {
 	pub imported: i64,
 	pub skipped: i64,
 	pub renamed: i64,
@@ -220,10 +220,10 @@ mod tests {
 		assert_eq!(ConflictStrategy::from_i64(99), ConflictStrategy::Overwrite);
 	}
 
-	// ExportOptions: 序列化应使用 camelCase 字段名, 且能通过 JSON 往返还原
+	// ExportReqVO: 序列化应使用 camelCase 字段名, 且能通过 JSON 往返还原
 	#[test]
 	fn export_options_round_trips_through_json_with_camel_case_fields() {
-		let opts = ExportOptions {
+		let opts = ExportReqVO {
 			include_skills: true,
 			include_mcp: false,
 			scope: Scope::ByType,
@@ -241,18 +241,18 @@ mod tests {
 		assert!(json.get("include_skills").is_none());
 
 		let text = serde_json::to_string(&opts).unwrap();
-		let back: ExportOptions = serde_json::from_str(&text).unwrap();
+		let back: ExportReqVO = serde_json::from_str(&text).unwrap();
 		assert_eq!(back, opts);
 	}
 
-	// Manifest: 内嵌 Counts/versions/checksums 应整体序列化为 camelCase, 且能 JSON 往返还原
+	// ManifestRespVO: 内嵌 Counts/versions/checksums 应整体序列化为 camelCase, 且能 JSON 往返还原
 	#[test]
 	fn manifest_round_trips_through_json_with_nested_counts_and_checksums() {
 		let mut checksums = BTreeMap::new();
 		checksums.insert("skills/demo/SKILL.md".to_string(), "abc123".to_string());
 		let mut versions = BTreeMap::new();
 		versions.insert("skills/demo".to_string(), "1.2.0".to_string());
-		let manifest = Manifest {
+		let manifest = ManifestRespVO {
 			schema_version: 1,
 			exported_at: "2026-07-10T00:00:00Z".to_string(),
 			counts: Counts {
@@ -274,14 +274,14 @@ mod tests {
 		assert!(json.get("schema_version").is_none());
 
 		let text = serde_json::to_string(&manifest).unwrap();
-		let back: Manifest = serde_json::from_str(&text).unwrap();
+		let back: ManifestRespVO = serde_json::from_str(&text).unwrap();
 		assert_eq!(back, manifest);
 	}
 
-	// ImportPreview: 序列化应使用 camelCase(schemaOk), 且能 JSON 往返还原
+	// ImportPreviewRespVO: 序列化应使用 camelCase(schemaOk), 且能 JSON 往返还原
 	#[test]
 	fn import_preview_round_trips_through_json_with_camel_case_fields() {
-		let preview = ImportPreview {
+		let preview = ImportPreviewRespVO {
 			skill: 2,
 			mcp: 1,
 			config: 1,
@@ -293,14 +293,14 @@ mod tests {
 		assert!(json.get("schema_ok").is_none());
 
 		let text = serde_json::to_string(&preview).unwrap();
-		let back: ImportPreview = serde_json::from_str(&text).unwrap();
+		let back: ImportPreviewRespVO = serde_json::from_str(&text).unwrap();
 		assert_eq!(back, preview);
 	}
 
-	// ImportOutcome: 序列化应使用 camelCase(与其它三个字段同风格), 且能 JSON 往返还原
+	// ImportOutcomeRespVO: 序列化应使用 camelCase(与其它三个字段同风格), 且能 JSON 往返还原
 	#[test]
 	fn import_outcome_round_trips_through_json_with_camel_case_fields() {
-		let outcome = ImportOutcome {
+		let outcome = ImportOutcomeRespVO {
 			imported: 3,
 			skipped: 1,
 			renamed: 2,
@@ -313,7 +313,7 @@ mod tests {
 		assert_eq!(json["status"], 2);
 
 		let text = serde_json::to_string(&outcome).unwrap();
-		let back: ImportOutcome = serde_json::from_str(&text).unwrap();
+		let back: ImportOutcomeRespVO = serde_json::from_str(&text).unwrap();
 		assert_eq!(back, outcome);
 	}
 }

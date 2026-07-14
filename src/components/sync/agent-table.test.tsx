@@ -3,11 +3,11 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AgentRow } from '@/api/agent';
-import type { SyncSummary } from '@/api/sync';
+import type { AgentRespVO } from '@/api/agent';
+import type { SyncSummaryRespVO } from '@/api/sync';
 import { AgentTable } from './agent-table';
 
-function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
+function makeAgent(overrides: Partial<AgentRespVO> = {}): AgentRespVO {
 	return {
 		id: 1,
 		agentKind: 'ClaudeCode',
@@ -25,7 +25,7 @@ function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
 const baseProps = {
 	pendingCountByAgentId: new Map<number, number | undefined>(),
 	installedCountByAgentId: new Map<number, { skill: number; mcp: number }>(),
-	lastOutcomeByAgentId: new Map<number, SyncSummary>(),
+	lastOutcomeByAgentId: new Map<number, SyncSummaryRespVO>(),
 	selectedId: null,
 	onSelectAgent: vi.fn(),
 	onSyncAgentIds: vi.fn(),

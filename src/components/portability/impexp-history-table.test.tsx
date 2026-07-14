@@ -2,10 +2,10 @@
 // 创建日期: 2026-07-10
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import type { ImpexpRow } from '@/api/portability';
+import type { ImpexpRespVO } from '@/api/portability';
 import { ImpexpHistoryTable } from './impexp-history-table';
 
-function makeRow(overrides: Partial<ImpexpRow> = {}): ImpexpRow {
+function makeRow(overrides: Partial<ImpexpRespVO> = {}): ImpexpRespVO {
 	return {
 		id: 1,
 		direction: 0,

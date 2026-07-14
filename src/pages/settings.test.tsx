@@ -1,5 +1,5 @@
-// 文件作用: Settings 页面集成测试(mock src/api/setting、src/api/auth 与 src/lib/dialog) ——
-//           五个分区渲染、切换开关/修改超时改变本地态、保存更改携带完整 Settings、恢复默认回到
+// 文件作用: SettingRespVO 页面集成测试(mock src/api/setting、src/api/auth 与 src/lib/dialog) ——
+//           五个分区渲染、切换开关/修改超时改变本地态、保存更改携带完整 SettingRespVO、恢复默认回到
 //           硬编码默认值(存储目录两项例外: 保留已加载值, 不清空为空串)、账号区登录/退出对应
 //           auth api、脏态下保存按钮可用性、存储目录两个"浏览"按钮接原生目录对话框(pickDirectory)
 // 创建日期: 2026-07-10
@@ -7,8 +7,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Settings } from '@/api/setting';
-import type { AuthAccount } from '@/api/auth';
+import type { SettingRespVO } from '@/api/setting';
+import type { AuthAccountRespVO } from '@/api/auth';
 import Settings_ from './settings';
 
 vi.mock('@/api/setting', () => ({
@@ -33,7 +33,7 @@ import { pickDirectory } from '@/lib/dialog';
 /** 与页面内硬编码的默认设置口径一致(见 pages/settings.tsx DEFAULT_SETTINGS), 独立重复定义,
  * 使本测试文件作为一份不依赖实现内部常量的独立规格(与 portability.test.tsx 的
  * defaultExportOptions 同一惯例) */
-const defaultSettings: Settings = {
+const defaultSettings: SettingRespVO = {
 	storageSkillDir: '',
 	storageMcpDir: '',
 	syncAutoNewAgent: true,
@@ -50,7 +50,7 @@ const defaultSettings: Settings = {
 
 /** 一份与默认值处处不同的"已保存设置", 用于验证"恢复默认"确实回到硬编码默认值, 而不是回到
  * 本次 settingsGet 加载到的值 */
-const loadedSettings: Settings = {
+const loadedSettings: SettingRespVO = {
 	storageSkillDir: '/Users/demo/.skillhub/skills',
 	storageMcpDir: '/Users/demo/.skillhub/mcp',
 	syncAutoNewAgent: true,
@@ -65,7 +65,7 @@ const loadedSettings: Settings = {
 	updateChannel: 1,
 };
 
-function makeAccount(overrides: Partial<AuthAccount> = {}): AuthAccount {
+function makeAccount(overrides: Partial<AuthAccountRespVO> = {}): AuthAccountRespVO {
 	return {
 		id: 1,
 		provider: 'GitHub',
@@ -86,12 +86,12 @@ function renderSettings() {
 	);
 }
 
-describe('Settings 页面', () => {
+describe('SettingRespVO 页面', () => {
 	beforeEach(() => {
 		vi.mocked(settingsGet).mockReset().mockResolvedValue(loadedSettings);
 		vi.mocked(settingsSave)
 			.mockReset()
-			.mockImplementation(async (next: Settings) => next);
+			.mockImplementation(async (next: SettingRespVO) => next);
 		vi.mocked(authAccounts)
 			.mockReset()
 			.mockResolvedValue([makeAccount({ provider: 'GitHub', account: 'demo@example.com' })]);
@@ -108,7 +108,7 @@ describe('Settings 页面', () => {
 	it('应渲染标题与五个分区标题', async () => {
 		renderSettings();
 
-		expect(screen.getByText('设置 / Settings')).toBeInTheDocument();
+		expect(screen.getByText('设置 / SettingRespVO')).toBeInTheDocument();
 		expect(screen.getByText('账号与认证 Account')).toBeInTheDocument();
 		expect(screen.getByText('存储目录 Storage')).toBeInTheDocument();
 		expect(screen.getByText('同步偏好 Sync Preferences')).toBeInTheDocument();
@@ -168,7 +168,7 @@ describe('Settings 页面', () => {
 		expect(screen.getByRole('button', { name: '保存更改' })).toBeEnabled();
 	});
 
-	it('修改请求超时输入后点击"保存更改"应以完整 Settings(含被改字段)调用 settingsSave', async () => {
+	it('修改请求超时输入后点击"保存更改"应以完整 SettingRespVO(含被改字段)调用 settingsSave', async () => {
 		const user = userEvent.setup();
 		renderSettings();
 		await waitFor(() =>

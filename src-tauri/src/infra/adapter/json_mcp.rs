@@ -20,7 +20,7 @@ use serde_json::Value;
 
 use crate::domain::agent::{ActualState, AgentKind, AgentScope, DetectedAgent, McpServerDef};
 use crate::domain::resource::ResourceType;
-use crate::domain::sync::{DesiredPayload, DiffAction, DiffItem, DiffPlan, ItemOutcome};
+use crate::domain::sync::{DesiredPayload, DiffAction, DiffItem, DiffPlanRespVO, ItemOutcome};
 
 use super::skill_target::SkillTarget;
 use super::util::{apply_skill_item, backup_file, err_outcome, ok_outcome};
@@ -193,7 +193,7 @@ impl AgentAdapter for JsonMcpAdapter {
 	/// remove_skill(见 apply_skill_item), 与 Mcp 项的落地位置互不相干。返回的 outcomes 顺序
 	/// 为"先 Mcp 项(按 items 原有顺序), 再 Skill 项(按 items 原有顺序)", 调用方应按 name 匹配
 	/// 而非依赖顺序
-	fn apply(&self, agent: &DetectedAgent, plan: &DiffPlan) -> Result<Vec<ItemOutcome>> {
+	fn apply(&self, agent: &DetectedAgent, plan: &DiffPlanRespVO) -> Result<Vec<ItemOutcome>> {
 		let path = PathBuf::from(&agent.config_path);
 		let mut outcomes = Vec::new();
 
@@ -673,7 +673,7 @@ mod tests {
 			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		let probe = probe_for(dir.path(), ".claude.json");
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_diff_item(
 				DiffAction::Add,
 				"newSrv",
@@ -721,7 +721,7 @@ mod tests {
 			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		let probe = probe_for(dir.path(), ".claude.json");
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_diff_item(
 				DiffAction::Update,
 				"target",
@@ -757,7 +757,7 @@ mod tests {
 			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		let probe = probe_for(dir.path(), ".claude.json");
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_remove_item("toRemove")],
 		};
 
@@ -785,7 +785,7 @@ mod tests {
 			},
 		);
 		let probe = probe_for(dir.path(), ".cursor/mcp.json");
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_diff_item(
 				DiffAction::Add,
 				"newSrv",
@@ -828,7 +828,7 @@ mod tests {
 			payload: None, // Add 却没带 payload, 属脏数据
 		};
 		let good_item = mcp_diff_item(DiffAction::Add, "goodSrv", "node", &["index.js"]);
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![bad_item, good_item],
 		};
 
@@ -866,7 +866,7 @@ mod tests {
 			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		let probe = probe_for(dir.path(), ".claude.json");
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![DiffItem {
 				res_type: ResourceType::Skill,
 				name: "demo-skill".to_string(),

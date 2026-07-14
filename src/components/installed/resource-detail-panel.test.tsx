@@ -2,10 +2,10 @@
 // 创建日期: 2026-07-09
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import type { Resource } from '@/api/library';
+import type { ResourceRespVO } from '@/api/library';
 import { ResourceDetailPanel } from './resource-detail-panel';
 
-function makeResource(overrides: Partial<Resource> = {}): Resource {
+function makeResource(overrides: Partial<ResourceRespVO> = {}): ResourceRespVO {
 	const name = overrides.name ?? 'data-visualizer';
 	return {
 		id: 1,

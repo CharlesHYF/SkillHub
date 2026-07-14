@@ -3,7 +3,7 @@
 // 创建日期: 2026-07-10
 import { FileClock } from 'lucide-react';
 
-import type { ImpexpRow } from '@/api/portability';
+import type { ImpexpRespVO } from '@/api/portability';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { EmptyState } from '@/components/common/empty-state';
 import { SkeletonTable } from '@/components/common/skeleton';
@@ -13,14 +13,14 @@ import { formatRelativeTime } from '@/lib/utils';
 import { DIRECTION_ICON, DIRECTION_LABEL, IMPEXP_STATUS_LABEL } from './impexp-display';
 
 interface ImpexpHistoryTableProps {
-	rows: ImpexpRow[];
+	rows: ImpexpRespVO[];
 	/** 历史列表首次加载中: 为真时展示骨架屏而非空态 */
 	isLoading?: boolean;
 }
 
 /** 导入导出界面底部历史表: 还原原型第 6 屏底部 —— 操作/文件名/类型/内容摘要/状态/时间 */
 export function ImpexpHistoryTable({ rows, isLoading = false }: ImpexpHistoryTableProps) {
-	const columns: DataTableColumn<ImpexpRow>[] = [
+	const columns: DataTableColumn<ImpexpRespVO>[] = [
 		{
 			key: 'direction-icon',
 			header: '操作',

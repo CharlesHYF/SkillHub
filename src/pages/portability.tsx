@@ -17,7 +17,7 @@ import {
 	importPreview,
 	impexpHistory,
 	type ConflictStrategy,
-	type ExportOptions,
+	type ExportReqVO,
 } from '@/api/portability';
 import { PageHeader } from '@/components/common/page-header';
 import { ExportPanel } from '@/components/portability/export-panel';
@@ -33,7 +33,7 @@ const IMPORT_FILE_FILTERS = [{ name: '导入包', extensions: ['zip', 'json', 't
 
 /** 导出保存对话框的过滤器: 按当前所选目标格式(zip/json/tar)生成单一扩展名过滤器, 扩展名取自
  * FORMAT_OPTIONS 的既有措辞, 避免与导出面板的格式文案重复维护一份映射 */
-function exportSaveDialogFilters(format: ExportOptions['format']) {
+function exportSaveDialogFilters(format: ExportReqVO['format']) {
 	const ext = FORMAT_OPTIONS.find((opt) => opt.value === format)?.label ?? 'zip';
 	return [{ name: `导出包 (.${ext})`, extensions: [ext] }];
 }
@@ -44,7 +44,7 @@ const IMPORT_PREVIEW_KEY = 'import-preview';
 const HISTORY_LIMIT = 20;
 
 /** 导出选项默认值: 与原型截图一致 —— 全部勾选/全部数据/zip/含配置/含版本锁定 */
-const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
+const DEFAULT_EXPORT_OPTIONS: ExportReqVO = {
 	includeSkills: true,
 	includeMcp: true,
 	scope: 0,
@@ -57,7 +57,7 @@ const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
 export default function Portability() {
 	const queryClient = useQueryClient();
 
-	const [exportOptions, setExportOptions] = useState<ExportOptions>(DEFAULT_EXPORT_OPTIONS);
+	const [exportOptions, setExportOptions] = useState<ExportReqVO>(DEFAULT_EXPORT_OPTIONS);
 	// 导出目标路径: 可直接在文本框输入, 也可经"选择保存位置"原生对话框拿路径回填
 	const [exportOutPath, setExportOutPath] = useState('');
 

@@ -12,14 +12,14 @@ import {
 	importPreview,
 	importBundle,
 	impexpHistory,
-	type ExportOptions,
-	type ImportPreview,
-	type ImportOutcome,
-	type ImpexpRow,
-	type Manifest,
+	type ExportReqVO,
+	type ImportPreviewRespVO,
+	type ImportOutcomeRespVO,
+	type ImpexpRespVO,
+	type ManifestRespVO,
 } from './portability';
 
-const baseOptions: ExportOptions = {
+const baseOptions: ExportReqVO = {
 	includeSkills: true,
 	includeMcp: true,
 	scope: 0,
@@ -29,8 +29,8 @@ const baseOptions: ExportOptions = {
 };
 
 describe('portability api', () => {
-	it('exportBundle 以 command 名 export_bundle 调用并传 options/outPath, 返回 Manifest', async () => {
-		const manifest: Manifest = {
+	it('exportBundle 以 command 名 export_bundle 调用并传 options/outPath, 返回 ManifestRespVO', async () => {
+		const manifest: ManifestRespVO = {
 			schemaVersion: 1,
 			exportedAt: '2026-07-10 00:00:00',
 			counts: { skill: 128, mcp: 45, config: 23, agent: 8 },
@@ -48,7 +48,7 @@ describe('portability api', () => {
 	});
 
 	it('importPreview 以 command 名 import_preview 调用并传 path, 返回预览计数', async () => {
-		const preview: ImportPreview = {
+		const preview: ImportPreviewRespVO = {
 			skill: 128,
 			mcp: 45,
 			config: 23,
@@ -66,7 +66,7 @@ describe('portability api', () => {
 	});
 
 	it('importBundle 以 command 名 import_bundle 调用并传 path/strategy/autoSync, 返回结果', async () => {
-		const outcome: ImportOutcome = {
+		const outcome: ImportOutcomeRespVO = {
 			imported: 128,
 			skipped: 0,
 			renamed: 0,
@@ -85,7 +85,7 @@ describe('portability api', () => {
 	});
 
 	it('impexpHistory 以 command 名 impexp_history 调用并传 limit, 返回历史行', async () => {
-		const rows: ImpexpRow[] = [
+		const rows: ImpexpRespVO[] = [
 			{
 				id: 1,
 				direction: 0,

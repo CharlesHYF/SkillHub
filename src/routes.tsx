@@ -8,7 +8,7 @@ import MarketplaceDetail from './pages/marketplace-detail';
 import Installed from './pages/installed';
 import SyncCenter from './pages/sync-center';
 import Portability from './pages/portability';
-import Settings from './pages/settings';
+import SettingRespVO from './pages/settings';
 
 /** 应用路由表 */
 export const routes: RouteObject[] = [
@@ -22,7 +22,7 @@ export const routes: RouteObject[] = [
 			{ path: 'installed', element: <Installed /> },
 			{ path: 'sync', element: <SyncCenter /> },
 			{ path: 'portability', element: <Portability /> },
-			{ path: 'settings', element: <Settings /> },
+			{ path: 'settings', element: <SettingRespVO /> },
 		],
 	},
 ];

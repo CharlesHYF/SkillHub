@@ -19,9 +19,9 @@ import {
 	resourceAgentLinks,
 	syncApply,
 	syncDiff,
-	type DiffPlan,
+	type DiffPlanRespVO,
 	type SyncProgress,
-	type SyncSummary,
+	type SyncSummaryRespVO,
 } from '@/api/sync';
 import { PageHeader } from '@/components/common/page-header';
 import { StatCard } from '@/components/common/stat-card';
@@ -50,10 +50,10 @@ export default function SyncCenter() {
 	// assoc_set/resource_agent_links/sync_diff/sync_apply 四个同步相关命令), "最近同步结果"
 	// 统计卡与"上次结果/上次详情"只能反映本次会话内发生过的 sync_apply 调用, 而非持久化历史
 	const [progress, setProgress] = useState<SyncProgress | null>(null);
-	const [lastSummary, setLastSummary] = useState<SyncSummary | undefined>(undefined);
-	const [lastOutcomeByAgentId, setLastOutcomeByAgentId] = useState<Map<number, SyncSummary>>(
-		new Map(),
-	);
+	const [lastSummary, setLastSummary] = useState<SyncSummaryRespVO | undefined>(undefined);
+	const [lastOutcomeByAgentId, setLastOutcomeByAgentId] = useState<
+		Map<number, SyncSummaryRespVO>
+	>(new Map());
 
 	const agentsQuery = useQuery({
 		queryKey: [AGENT_LIST_KEY],
@@ -79,7 +79,7 @@ export default function SyncCenter() {
 	});
 
 	const diffPlanByAgentId = useMemo(() => {
-		const map = new Map<number, DiffPlan | undefined>();
+		const map = new Map<number, DiffPlanRespVO | undefined>();
 		agents.forEach((agent, idx) => map.set(agent.id, diffResults[idx]?.data));
 		return map;
 	}, [agents, diffResults]);

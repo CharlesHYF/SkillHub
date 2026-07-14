@@ -1,7 +1,7 @@
 // 文件作用: 已安装界面资源展示派生逻辑单测(来源文案/描述兜底/类型与状态映射)
 // 创建日期: 2026-07-09
 import { describe, it, expect } from 'vitest';
-import type { Resource } from '@/api/library';
+import type { ResourceRespVO } from '@/api/library';
 import {
 	SOURCE_LABEL,
 	deriveDescription,
@@ -9,7 +9,7 @@ import {
 	deriveSyncStatus,
 } from './resource-display';
 
-function makeResource(overrides: Partial<Resource> = {}): Resource {
+function makeResource(overrides: Partial<ResourceRespVO> = {}): ResourceRespVO {
 	return {
 		id: 1,
 		resType: 'Skill',

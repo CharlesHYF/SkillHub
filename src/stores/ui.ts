@@ -7,8 +7,8 @@ import { create } from 'zustand';
 export type ResourceTypeFilter = 'skill' | 'mcp' | undefined;
 
 /** 选中的市场资源标识: sourceType 为 domain::market::SourceId 的 i64 编码, 与 extId 组合
- * 定位一条 MarketResource(市场资源尚未导入本地库前没有 resource.id 这样的整数主键, 见
- * domain::market::MarketResource 的复合唯一键设计, 故不能复用 selectedResourceId) */
+ * 定位一条 MarketResourceRespVO(市场资源尚未导入本地库前没有 resource.id 这样的整数主键, 见
+ * domain::market::MarketResourceRespVO 的复合唯一键设计, 故不能复用 selectedResourceId) */
 export interface SelectedMarket {
 	sourceType: number;
 	extId: string;

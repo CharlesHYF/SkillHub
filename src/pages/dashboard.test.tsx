@@ -6,8 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { AgentRow } from '@/api/agent';
-import type { ActivityRow, DashboardSummary } from '@/api/dashboard';
+import type { AgentRespVO } from '@/api/agent';
+import type { ActivityRespVO, DashboardSummaryRespVO } from '@/api/dashboard';
 import Dashboard from './dashboard';
 
 vi.mock('@/api/dashboard', () => ({
@@ -27,7 +27,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 import { activityRecent, dashboardSummary } from '@/api/dashboard';
 import { agentList } from '@/api/agent';
 
-function makeSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummary {
+function makeSummary(overrides: Partial<DashboardSummaryRespVO> = {}): DashboardSummaryRespVO {
 	return {
 		skillCount: 128,
 		mcpCount: 45,
@@ -38,7 +38,7 @@ function makeSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummar
 	};
 }
 
-function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
+function makeAgent(overrides: Partial<AgentRespVO> = {}): AgentRespVO {
 	return {
 		id: 1,
 		agentKind: 'ClaudeCode',
@@ -92,7 +92,7 @@ describe('Dashboard 页面', () => {
 			.toISOString()
 			.slice(0, 19)
 			.replace('T', ' ');
-		const rows: ActivityRow[] = [
+		const rows: ActivityRespVO[] = [
 			{
 				id: 1,
 				actType: 1,

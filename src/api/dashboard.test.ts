@@ -10,13 +10,13 @@ vi.mock('@tauri-apps/api/core', () => ({
 import {
 	dashboardSummary,
 	activityRecent,
-	type DashboardSummary,
-	type ActivityRow,
+	type DashboardSummaryRespVO,
+	type ActivityRespVO,
 } from './dashboard';
 
 describe('dashboard api', () => {
 	it('dashboardSummary 以 command 名 dashboard_summary 调用', async () => {
-		const summary: DashboardSummary = {
+		const summary: DashboardSummaryRespVO = {
 			skillCount: 3,
 			mcpCount: 2,
 			agentCount: 4,
@@ -30,7 +30,7 @@ describe('dashboard api', () => {
 	});
 
 	it('activityRecent 以 command 名 activity_recent 调用并传 limit', async () => {
-		const rows: ActivityRow[] = [
+		const rows: ActivityRespVO[] = [
 			{
 				id: 1,
 				actType: 1,

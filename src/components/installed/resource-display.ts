@@ -1,7 +1,7 @@
 // 文件作用: 已安装界面资源展示态的派生逻辑(来源文案/描述兜底/类型与同步状态映射),
 //           供 resource-list/resource-detail-panel 两处共用, 避免同一套映射写两遍
 // 创建日期: 2026-07-09
-import type { Resource, ResourceType, SourceType } from '@/api/library';
+import type { ResourceRespVO, ResourceType, SourceType } from '@/api/library';
 import type { ResourceKind } from '@/components/common/type-badge';
 import type { SyncStatus } from '@/components/common/sync-status-badge';
 
@@ -12,10 +12,10 @@ export const SOURCE_LABEL: Record<SourceType, string> = {
 	ThirdParty: '第三方仓库',
 };
 
-/** 资源描述兜底: 后端 resource 表暂无独立的 description 字段(见后端 domain::resource::Resource
+/** 资源描述兜底: 后端 resource 表暂无独立的 description 字段(见后端 domain::resource::ResourceRespVO
  * 与迁移脚本 0001_init.sql), displayName 在当前导入逻辑下默认与 name 相同; 仅当两者确实不同时
  * 才把 displayName 当描述展示, 避免与主标题重复展示同一串文本 */
-export function deriveDescription(resource: Resource): string | undefined {
+export function deriveDescription(resource: ResourceRespVO): string | undefined {
 	if (resource.displayName && resource.displayName !== resource.name) {
 		return resource.displayName;
 	}

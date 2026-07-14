@@ -12,7 +12,7 @@ use crate::domain::agent::{AgentKind, AgentScope, DetectedAgent};
 /// (commands::agent)直接作为 Tauri 命令返回类型
 #[derive(Serialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct AgentRow {
+pub struct AgentRespVO {
 	pub id: i64,
 	pub agent_kind: AgentKind,
 	pub name: String,
@@ -24,9 +24,9 @@ pub struct AgentRow {
 	pub update_time: String,
 }
 
-/// 将一行查询结果映射为 AgentRow 实体
-fn row_to_agent_row(row: &Row) -> rusqlite::Result<AgentRow> {
-	Ok(AgentRow {
+/// 将一行查询结果映射为 AgentRespVO 实体
+fn row_to_agent_row(row: &Row) -> rusqlite::Result<AgentRespVO> {
+	Ok(AgentRespVO {
 		id: row.get(0)?,
 		agent_kind: AgentKind::from_code(row.get(1)?),
 		name: row.get(2)?,
@@ -65,7 +65,7 @@ pub fn upsert(conn: &Connection, agent: &DetectedAgent) -> rusqlite::Result<i64>
 }
 
 /// 查询全部 Agent, 按 id 升序
-pub fn list(conn: &Connection) -> rusqlite::Result<Vec<AgentRow>> {
+pub fn list(conn: &Connection) -> rusqlite::Result<Vec<AgentRespVO>> {
 	let mut stmt = conn.prepare(
 		"SELECT id, agent_kind, name, config_path, scope, status, last_sync_time, \
 		 create_time, update_time \
@@ -76,7 +76,7 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<AgentRow>> {
 }
 
 /// 按主键查询单个 Agent, 不存在返回 None(而非 Err)
-pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Option<AgentRow>> {
+pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Option<AgentRespVO>> {
 	conn.query_row(
 		"SELECT id, agent_kind, name, config_path, scope, status, last_sync_time, \
 		 create_time, update_time \
@@ -201,7 +201,7 @@ mod tests {
 		assert_eq!(row.name, "Claude Code", "不应影响其它列");
 	}
 
-	// AgentRow: 序列化应使用 camelCase 字段名(agentKind/configPath/lastSyncTime 等),
+	// AgentRespVO: 序列化应使用 camelCase 字段名(agentKind/configPath/lastSyncTime 等),
 	// 供 Task 8 命令层(commands::agent)直接作为 Tauri 命令返回类型消费
 	#[test]
 	fn agent_row_serializes_as_camel_case() {

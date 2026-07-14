@@ -5,7 +5,7 @@
 import { Fragment } from 'react';
 import { Search, ChevronDown, ChevronLeft, ChevronRight, SearchX } from 'lucide-react';
 
-import type { MarketResource } from '@/api/market';
+import type { MarketResourceRespVO } from '@/api/market';
 import { EmptyState } from '@/components/common/empty-state';
 import { SkeletonCards } from '@/components/common/skeleton';
 import { Button } from '@/components/ui/button';
@@ -55,7 +55,7 @@ function pageNumbers(current: number, total: number): number[] {
 
 interface MarketListProps {
 	/** market_search 当页命中(未经 chip 客户端筛选) */
-	items: MarketResource[];
+	items: MarketResourceRespVO[];
 	/** 服务端总命中数(不受分页/chip 客户端筛选影响) */
 	total: number;
 	/** 搜索请求进行中(含挂载时自动触发的市场缓存刷新); 为真时卡片网格区展示加载态而非"暂无
@@ -85,8 +85,8 @@ interface MarketListProps {
 	onSortChange: (sort: number) => void;
 	onPageChange: (page: number) => void;
 	onPageSizeChange: (pageSize: number) => void;
-	onSelectItem: (item: MarketResource) => void;
-	onDownload: (item: MarketResource) => void;
+	onSelectItem: (item: MarketResourceRespVO) => void;
+	onDownload: (item: MarketResourceRespVO) => void;
 }
 
 /** 资源中心左侧列表区: 搜索/分段/筛选/排序 + 卡片网格 + 分页, 还原原型第 2 屏 */

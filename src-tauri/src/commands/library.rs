@@ -6,9 +6,9 @@
 
 use tauri::State;
 
-use crate::domain::resource::{Resource, ResourceType};
-use crate::services::agent_import::{self, ImportFromAgentsOutcome};
-use crate::services::library::{self, LibraryCounts};
+use crate::domain::resource::{ResourceRespVO, ResourceType};
+use crate::services::agent_import::{self, ImportFromAgentsOutcomeRespVO};
+use crate::services::library::{self, LibraryCountsRespVO};
 use crate::AppState;
 
 use super::home_dir;
@@ -20,21 +20,21 @@ pub fn library_list(
 	state: State<'_, AppState>,
 	res_type: Option<i64>,
 	keyword: Option<String>,
-) -> Result<Vec<Resource>, String> {
+) -> Result<Vec<ResourceRespVO>, String> {
 	let conn = state.db();
 	library::list(&conn, res_type.map(ResourceType::from_i64), keyword).map_err(|e| e.to_string())
 }
 
 /// 按主键查询单条资源, 不存在返回 None
 #[tauri::command]
-pub fn library_get(state: State<'_, AppState>, id: i64) -> Result<Option<Resource>, String> {
+pub fn library_get(state: State<'_, AppState>, id: i64) -> Result<Option<ResourceRespVO>, String> {
 	let conn = state.db();
 	library::get(&conn, id).map_err(|e| e.to_string())
 }
 
 /// 统计本地库 Skill/MCP 各自数量, 供首页/侧栏角标展示
 #[tauri::command]
-pub fn library_counts(state: State<'_, AppState>) -> Result<LibraryCounts, String> {
+pub fn library_counts(state: State<'_, AppState>) -> Result<LibraryCountsRespVO, String> {
 	let conn = state.db();
 	library::counts(&conn).map_err(|e| e.to_string())
 }
@@ -42,7 +42,10 @@ pub fn library_counts(state: State<'_, AppState>) -> Result<LibraryCounts, Strin
 /// 把本地路径(MCP 单定义 json 文件或含 SKILL.md 的 Skill 目录)导入为一条资源: 内容拷入
 /// SkillHub 存储目录并落库, 详见 services::library::import_local
 #[tauri::command]
-pub fn resource_import_local(state: State<'_, AppState>, path: String) -> Result<Resource, String> {
+pub fn resource_import_local(
+	state: State<'_, AppState>,
+	path: String,
+) -> Result<ResourceRespVO, String> {
 	let conn = state.db();
 	library::import_local(&conn, &state.data_dir, &path).map_err(|e| e.to_string())
 }
@@ -71,7 +74,7 @@ pub fn resource_delete(state: State<'_, AppState>, id: i64) -> Result<(), String
 #[tauri::command]
 pub fn library_import_from_agents(
 	state: State<'_, AppState>,
-) -> Result<ImportFromAgentsOutcome, String> {
+) -> Result<ImportFromAgentsOutcomeRespVO, String> {
 	let conn = state.db();
 	let home = home_dir()?;
 	agent_import::import_from_agents(&conn, &home, &state.data_dir).map_err(|e| e.to_string())

@@ -16,7 +16,7 @@ import {
 	PackageOpen,
 } from 'lucide-react';
 
-import type { Resource } from '@/api/library';
+import type { ResourceRespVO } from '@/api/library';
 import type { ResourceTypeFilter } from '@/stores/ui';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { EmptyState } from '@/components/common/empty-state';
@@ -52,7 +52,7 @@ import {
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 interface ResourceListProps {
-	resources: Resource[];
+	resources: ResourceRespVO[];
 	/** 资源库首次加载中: 为真时表格区展示骨架屏而非空态, 避免加载期误判为"暂无资源" */
 	isLoading?: boolean;
 	/** resource.id -> 已关联(desired=1) Agent 数, 由 pages/installed 从 resourceAgentLinks 聚合而来 */
@@ -62,9 +62,9 @@ interface ResourceListProps {
 	keyword: string;
 	onTypeFilterChange: (filter: ResourceTypeFilter) => void;
 	onKeywordChange: (keyword: string) => void;
-	onSelectResource: (resource: Resource) => void;
-	onToggleEnabled: (resource: Resource) => void;
-	onRequestDelete: (resource: Resource) => void;
+	onSelectResource: (resource: ResourceRespVO) => void;
+	onToggleEnabled: (resource: ResourceRespVO) => void;
+	onRequestDelete: (resource: ResourceRespVO) => void;
 }
 
 /** 分页页码按钮列表: 总页数不多(<=7)时全量展示, 否则展示首尾各 2 页 + 当前页前后 1 页,
@@ -125,7 +125,7 @@ export function ResourceList({
 		});
 	}
 
-	const columns: DataTableColumn<Resource>[] = [
+	const columns: DataTableColumn<ResourceRespVO>[] = [
 		{
 			key: 'checkbox',
 			header: (

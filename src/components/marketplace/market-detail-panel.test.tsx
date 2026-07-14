@@ -5,7 +5,7 @@ import type { ReactElement } from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import type { MarketResource } from '@/api/market';
+import type { MarketResourceRespVO } from '@/api/market';
 import { buildMarketDetailId } from '@/pages/marketplace-detail';
 import { MarketDetailPanel } from './market-detail-panel';
 
@@ -15,7 +15,7 @@ function renderPanel(ui: ReactElement) {
 	return render(<MemoryRouter>{ui}</MemoryRouter>);
 }
 
-function makeMarketResource(overrides: Partial<MarketResource> = {}): MarketResource {
+function makeMarketResource(overrides: Partial<MarketResourceRespVO> = {}): MarketResourceRespVO {
 	return {
 		sourceType: 'GithubSkills',
 		resType: 'Skill',

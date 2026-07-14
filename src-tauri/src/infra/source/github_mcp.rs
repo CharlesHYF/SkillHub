@@ -6,7 +6,7 @@
 //           首段正文作描述; 服务器启动命令优先从 README 里"Configure for Claude.app"一节的示例
 //           配置代码块(含 mcpServers 键的 JSON, 已用 fetch 服务器 README 实测核实存在该惯例)解出,
 //           解不到再退化为兜底猜测 npx -y <包名或目录名>(与 mcp_registry 对 npm 包的既有猜测惯例
-//           一致)。归一化为 MarketResource(res_type=Mcp), 按是否探测到必填环境变量分派
+//           一致)。归一化为 MarketResourceRespVO(res_type=Mcp), 按是否探测到必填环境变量分派
 //           Mcp/McpTemplate(与 mcp_registry 同一惯例), 实现 SourceProvider(见 infra::source::mod)。
 //           目录本身即视为一个合法的 MCP 服务器候选(不像 github_skills 要求 SKILL.md 必须存在),
 //           缺失 package.json/README.md 时相关字段宽松兜底为空/猜测值, 不跳过该目录
@@ -22,7 +22,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::domain::agent::McpServerDef;
-use crate::domain::market::{InstallManifest, MarketResource, Query, SourceId};
+use crate::domain::market::{InstallManifest, MarketResourceRespVO, Query, SourceId};
 use crate::domain::resource::ResourceType;
 use crate::infra::http::{get_json, HttpResult};
 
@@ -43,7 +43,7 @@ pub struct RepoRef {
 }
 
 /// github_mcp 市场源: 聚合 repos 列表下各仓库 servers_dir 内的子目录, 每个子目录归一化为一条
-/// MCP 类 MarketResource
+/// MCP 类 MarketResourceRespVO
 pub struct GithubMcpProvider {
 	repos: Vec<RepoRef>,
 	base_url: String,
@@ -168,7 +168,7 @@ impl GithubCtx<'_> {
 	}
 
 	/// 拉取本仓库的星标数与最后一次 push 时间(GitHub repos API `GET /repos/{owner}/{repo}`);
-	/// 每个仓库在一次 search 里只调用一次, 供 search 施于该仓库下产出的全部 MarketResource,
+	/// 每个仓库在一次 search 里只调用一次, 供 search 施于该仓库下产出的全部 MarketResourceRespVO,
 	/// 而不是逐资源调用, 呼应"匿名限流 60 次/时, 严禁逐资源调用把额度打爆"的约束(与
 	/// github_skills::GithubCtx::fetch_repo_meta 同一惯例, 各自模块独立维护一份)。请求失败
 	/// (网络错误/限流/非 2xx)时把 Err 交回调用方, 由调用方 unwrap_or_default() 兜底为
@@ -187,10 +187,10 @@ impl GithubCtx<'_> {
 /// 供 fetch_repo_meta 失败时由调用方 unwrap_or_default() 优雅降级
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 struct RepoMeta {
-	/// 仓库星标数, 落库到 MarketResource.stars, 施于该仓库下的全部资源
+	/// 仓库星标数, 落库到 MarketResourceRespVO.stars, 施于该仓库下的全部资源
 	#[serde(default, rename = "stargazers_count")]
 	stars: i64,
-	/// 仓库最后一次 push 时间(ISO 8601), 落库到 MarketResource.updated_at, 施于该仓库下的
+	/// 仓库最后一次 push 时间(ISO 8601), 落库到 MarketResourceRespVO.updated_at, 施于该仓库下的
 	/// 全部资源
 	#[serde(default, rename = "pushed_at")]
 	pushed_at: String,
@@ -347,7 +347,7 @@ impl SourceProvider for GithubMcpProvider {
 
 	/// 遍历 repos 列表, 对每个仓库列出 servers_dir 下的子目录, 每个子目录本身即视为一个合法的
 	/// MCP 服务器候选(不要求任何特定文件存在); 尝试读取其 package.json(取 name/description/
-	/// version)与 README.md(取描述兜底 + 示例配置提示), 归一化为 MarketResource。关键字/分类
+	/// version)与 README.md(取描述兜底 + 示例配置提示), 归一化为 MarketResourceRespVO。关键字/分类
 	/// 过滤留给聚合层(services::market, Task 6), 本方法恒返回全量, query 参数暂未使用(签名与
 	/// 其它源统一)。
 	///
@@ -362,7 +362,7 @@ impl SourceProvider for GithubMcpProvider {
 		client: &Client,
 		_query: &Query,
 		token: Option<&str>,
-	) -> Result<Vec<MarketResource>> {
+	) -> Result<Vec<MarketResourceRespVO>> {
 		let mut resources = Vec::new();
 		for repo_ref in &self.repos {
 			let ctx = GithubCtx {
@@ -422,7 +422,7 @@ impl SourceProvider for GithubMcpProvider {
 					}
 				};
 
-				resources.push(MarketResource {
+				resources.push(MarketResourceRespVO {
 					source_type: SourceId::GithubMcp,
 					res_type: ResourceType::Mcp,
 					ext_id: format!("{}/{}/{}", repo_ref.owner, repo_ref.repo, entry.name),
@@ -450,7 +450,7 @@ impl SourceProvider for GithubMcpProvider {
 	async fn fetch_payload(
 		&self,
 		_client: &Client,
-		resource: &MarketResource,
+		resource: &MarketResourceRespVO,
 		_token: Option<&str>,
 	) -> Result<InstallPayload> {
 		let server_def = match &resource.install_manifest {
@@ -517,8 +517,8 @@ mod tests {
 			.await;
 	}
 
-	fn sample_market_resource(install_manifest: InstallManifest) -> MarketResource {
-		MarketResource {
+	fn sample_market_resource(install_manifest: InstallManifest) -> MarketResourceRespVO {
+		MarketResourceRespVO {
 			source_type: SourceId::GithubMcp,
 			res_type: ResourceType::Mcp,
 			ext_id: "acme/mcp-collection/foo".to_string(),
@@ -536,7 +536,7 @@ mod tests {
 		}
 	}
 
-	// search: 应从 servers_dir 下的 2 个目录归一化出 2 条 MarketResource, 非目录条目(README.md)
+	// search: 应从 servers_dir 下的 2 个目录归一化出 2 条 MarketResourceRespVO, 非目录条目(README.md)
 	// 应被过滤; 含 package.json 且 README 无配置提示的目录应兜底猜测 npx -y <包名>产出 Mcp; 无
 	// package.json 但 README 含 mcpServers 示例配置且需环境变量的目录应产出 McpTemplate,
 	// command/args 取自 README 示例而非兜底猜测
@@ -641,7 +641,7 @@ mod tests {
 		assert_eq!(server_def.env.get("BAR_API_KEY"), Some(&String::new()));
 	}
 
-	// search: 目录既无 package.json 也无 README.md(默认 404)时, 仍应产出一条 MarketResource,
+	// search: 目录既无 package.json 也无 README.md(默认 404)时, 仍应产出一条 MarketResourceRespVO,
 	// 各字段宽松兜底为空/猜测值, 不报错也不跳过该目录
 	#[tokio::test]
 	async fn search_defaults_missing_metadata_for_directory_without_package_or_readme() {

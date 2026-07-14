@@ -31,12 +31,12 @@ export interface DiffItem {
 }
 
 /** 一次同步中某 Agent 待处理的完整差异计划 */
-export interface DiffPlan {
+export interface DiffPlanRespVO {
 	items: DiffItem[];
 }
 
 /** 一次同步应用的结果汇总(sync_apply 返回的是各 Agent 结果相加后的总计) */
-export interface SyncSummary {
+export interface SyncSummaryRespVO {
 	success: number;
 	failed: number;
 	skipped: number;
@@ -52,7 +52,7 @@ export interface SyncProgress {
 
 /** 资源-Agent 关联展示行(仅取期望态 desired=1), 供"已安装"界面一次性统计每个资源已关联的
  * Agent 数量与详情面板的关联列表, 避免逐资源单独查询(N+1) */
-export interface ResourceAgentLink {
+export interface ResourceAgentLinkRespVO {
 	resourceId: number;
 	agentId: number;
 	agentName: string;
@@ -60,8 +60,8 @@ export interface ResourceAgentLink {
 
 /** 一次性查询全部资源的关联 Agent(仅期望态), 供"已安装"界面复用同一份数据
  * (表格"已关联 Agent 数"列 + 详情面板"已关联 Agent"列表) */
-export async function resourceAgentLinks(): Promise<ResourceAgentLink[]> {
-	return invoke<ResourceAgentLink[]>('resource_agent_links');
+export async function resourceAgentLinks(): Promise<ResourceAgentLinkRespVO[]> {
+	return invoke<ResourceAgentLinkRespVO[]>('resource_agent_links');
 }
 
 /** 设置某资源相对某 Agent 的期望态(desired: 应存在/不应存在) */
@@ -74,14 +74,14 @@ export async function assocSet(
 }
 
 /** 计算某 Agent 的期望态与其配置文件实际态之间的差异计划 */
-export async function syncDiff(agentId: number): Promise<DiffPlan> {
-	return invoke<DiffPlan>('sync_diff', { agentId });
+export async function syncDiff(agentId: number): Promise<DiffPlanRespVO> {
+	return invoke<DiffPlanRespVO>('sync_diff', { agentId });
 }
 
 /** 对给定 Agent 列表逐一应用同步, 返回各 Agent 结果相加后的总计; 过程中会持续推送
  * "sync://progress" 事件, 需配合 onSyncProgress 订阅才能拿到实时进度 */
-export async function syncApply(agentIds: number[]): Promise<SyncSummary> {
-	return invoke<SyncSummary>('sync_apply', { agentIds });
+export async function syncApply(agentIds: number[]): Promise<SyncSummaryRespVO> {
+	return invoke<SyncSummaryRespVO>('sync_apply', { agentIds });
 }
 
 /** 订阅同步进度事件("sync://progress"), 返回取消订阅函数(组件卸载时应调用) */

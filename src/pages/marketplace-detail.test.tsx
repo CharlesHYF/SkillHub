@@ -8,9 +8,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import type { MarketResource } from '@/api/market';
-import type { AuthAccount } from '@/api/auth';
-import type { Resource } from '@/api/library';
+import type { MarketResourceRespVO } from '@/api/market';
+import type { AuthAccountRespVO } from '@/api/auth';
+import type { ResourceRespVO } from '@/api/library';
 import MarketplaceDetail, { buildMarketDetailId, parseMarketDetailId } from './marketplace-detail';
 
 vi.mock('@/api/market', async (importOriginal) => {
@@ -31,7 +31,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 import { marketDetail, marketInstall } from '@/api/market';
 import { authLogin, authEnterToken } from '@/api/auth';
 
-function makeResource(overrides: Partial<MarketResource> = {}): MarketResource {
+function makeResource(overrides: Partial<MarketResourceRespVO> = {}): MarketResourceRespVO {
 	const name = overrides.name ?? 'github-sync-mcp';
 	return {
 		sourceType: 'GithubMcp',
@@ -54,7 +54,7 @@ function makeResource(overrides: Partial<MarketResource> = {}): MarketResource {
 	};
 }
 
-function makeAccount(overrides: Partial<AuthAccount> = {}): AuthAccount {
+function makeAccount(overrides: Partial<AuthAccountRespVO> = {}): AuthAccountRespVO {
 	return {
 		id: 1,
 		provider: 'GitHub',
@@ -66,7 +66,7 @@ function makeAccount(overrides: Partial<AuthAccount> = {}): AuthAccount {
 	};
 }
 
-function makeInstalledResource(overrides: Partial<Resource> = {}): Resource {
+function makeInstalledResource(overrides: Partial<ResourceRespVO> = {}): ResourceRespVO {
 	return {
 		id: 1,
 		resType: 'Mcp',

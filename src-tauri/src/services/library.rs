@@ -13,7 +13,7 @@ use anyhow::{anyhow, Context, Result};
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::domain::resource::{Resource, ResourceType, SourceType};
+use crate::domain::resource::{ResourceRespVO, ResourceType, SourceType};
 use crate::infra::adapter::skill_target::{copy_dir_recursive, parse_frontmatter_version};
 use crate::infra::repo_activity;
 use crate::infra::repo_resource::{self, ListFilter, NewResource};
@@ -21,7 +21,7 @@ use crate::infra::repo_resource::{self, ListFilter, NewResource};
 /// 本地库 Skill/MCP 各自数量统计, 供首页/侧栏角标展示
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct LibraryCounts {
+pub struct LibraryCountsRespVO {
 	pub skill: i64,
 	pub mcp: i64,
 }
@@ -31,7 +31,7 @@ pub fn list(
 	conn: &Connection,
 	res_type: Option<ResourceType>,
 	keyword: Option<String>,
-) -> Result<Vec<Resource>> {
+) -> Result<Vec<ResourceRespVO>> {
 	Ok(repo_resource::list(
 		conn,
 		&ListFilter { res_type, keyword },
@@ -39,22 +39,22 @@ pub fn list(
 }
 
 /// 按主键查询单条资源(薄封装 repo_resource::get)
-pub fn get(conn: &Connection, id: i64) -> Result<Option<Resource>> {
+pub fn get(conn: &Connection, id: i64) -> Result<Option<ResourceRespVO>> {
 	Ok(repo_resource::get(conn, id)?)
 }
 
 /// 统计 Skill/MCP 各自数量(薄封装 repo_resource::count_by_type)
-pub fn counts(conn: &Connection) -> Result<LibraryCounts> {
+pub fn counts(conn: &Connection) -> Result<LibraryCountsRespVO> {
 	let (skill, mcp) = repo_resource::count_by_type(conn)?;
-	Ok(LibraryCounts { skill, mcp })
+	Ok(LibraryCountsRespVO { skill, mcp })
 }
 
 /// 把本地路径登记为一条资源, 并把内容纳入 SkillHub 存储目录(data_dir), 按 `path` 是文件还是
 /// 目录分派到 MCP/Skill 两条导入分支(见 import_mcp/import_skill); 既不是文件也不是目录(路径
 /// 不存在)时返回 Err。两种分支落库后的 source_type 均为 LocalImport, 并各追加一条"新增"活动
-/// 记录(act_type=1, 见 insert_and_record), 最终返回落库后的完整 Resource
+/// 记录(act_type=1, 见 insert_and_record), 最终返回落库后的完整 ResourceRespVO
 /// (含数据库生成的 id/时间戳)
-pub fn import_local(conn: &Connection, data_dir: &Path, path: &str) -> Result<Resource> {
+pub fn import_local(conn: &Connection, data_dir: &Path, path: &str) -> Result<ResourceRespVO> {
 	let src = Path::new(path);
 	if src.is_dir() {
 		import_skill(conn, data_dir, src)
@@ -68,7 +68,7 @@ pub fn import_local(conn: &Connection, data_dir: &Path, path: &str) -> Result<Re
 /// MCP 导入分支: `src` 指向单个服务定义 json 文件, 原样拷到 `data_dir/mcp/<name>.json`,
 /// name 取文件名去扩展名(如 `demo-mcp.json` -> `demo-mcp`); MCP 定义本身不带版本概念
 /// (呼应 domain::agent::McpServerDef 不含 version 字段), version 落空串
-fn import_mcp(conn: &Connection, data_dir: &Path, src: &Path) -> Result<Resource> {
+fn import_mcp(conn: &Connection, data_dir: &Path, src: &Path) -> Result<ResourceRespVO> {
 	let name = file_stem_name(src)?;
 
 	let mcp_dir = data_dir.join("mcp");
@@ -90,7 +90,7 @@ fn import_mcp(conn: &Connection, data_dir: &Path, src: &Path) -> Result<Resource
 /// infra::adapter::skill_target::read_claude_skills_dir 对已装 Skill 的读取口径一致);
 /// 目标目录若已存在(重复导入同名 Skill)先整体清空再复制, 不做增量合并(与
 /// write_claude_skills_dir 的覆盖式更新惯例一致)
-fn import_skill(conn: &Connection, data_dir: &Path, src: &Path) -> Result<Resource> {
+fn import_skill(conn: &Connection, data_dir: &Path, src: &Path) -> Result<ResourceRespVO> {
 	let name = src
 		.file_name()
 		.map(|s| s.to_string_lossy().into_owned())
@@ -139,7 +139,7 @@ fn insert_and_record(
 	name: &str,
 	version: String,
 	target: &Path,
-) -> Result<Resource> {
+) -> Result<ResourceRespVO> {
 	let resource_id = repo_resource::insert(
 		conn,
 		&NewResource {
@@ -336,7 +336,7 @@ mod tests {
 		.unwrap();
 
 		let got = counts(&conn).unwrap();
-		assert_eq!(got, LibraryCounts { skill: 1, mcp: 1 });
+		assert_eq!(got, LibraryCountsRespVO { skill: 1, mcp: 1 });
 	}
 
 	// set_enabled: 应精确更新 enabled 列(薄封装转发, 验证不出岔子即可)

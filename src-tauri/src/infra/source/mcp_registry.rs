@@ -1,5 +1,5 @@
 // 文件作用: mcp_registry 市场源 —— 对接官方 MCP Registry(registry.modelcontextprotocol.io)的
-//           v0/servers 列表接口, 把每个 server 归一化为 MarketResource(res_type=Mcp), 按其
+//           v0/servers 列表接口, 把每个 server 归一化为 MarketResourceRespVO(res_type=Mcp), 按其
 //           packages/remotes 字段组装 McpServerDef, 含需用户填写的环境变量则产出
 //           InstallManifest::McpTemplate(否则产出可直接安装的 InstallManifest::Mcp), 实现
 //           SourceProvider(见 infra::source::mod)。registry 响应结构对外仍在演进(server.json
@@ -15,7 +15,7 @@ use reqwest::{Client, Url};
 use serde_json::Value;
 
 use crate::domain::agent::McpServerDef;
-use crate::domain::market::{InstallManifest, MarketResource, Query, SourceId};
+use crate::domain::market::{InstallManifest, MarketResourceRespVO, Query, SourceId};
 use crate::domain::resource::ResourceType;
 use crate::infra::http::{get_json, HttpResult};
 
@@ -68,7 +68,7 @@ impl SourceProvider for McpRegistryProvider {
 
 	/// M6 市场元数据富化任务前: 游标分页只取首页, 足够 MVP 浏览; 本任务按 nextCursor 持续
 	/// 翻页, 最多 MAX_PAGES 页(每页 PAGE_LIMIT 条, 见两常量文档), 把各页 servers 数组拼接后逐条
-	/// 归一化为 MarketResource, 提升可发现的 MCP 服务器数量。本源完全公开, 不转发调用方传入的
+	/// 归一化为 MarketResourceRespVO, 提升可发现的 MCP 服务器数量。本源完全公开, 不转发调用方传入的
 	/// token(即便非 None 也恒发匿名请求, 见结构体文档); query 参数交由聚合层做过滤(与
 	/// github_skills 同一惯例), 本方法恒返回(至多 MAX_PAGES 页范围内的)全量。
 	///
@@ -79,7 +79,7 @@ impl SourceProvider for McpRegistryProvider {
 		client: &Client,
 		_query: &Query,
 		_token: Option<&str>,
-	) -> Result<Vec<MarketResource>> {
+	) -> Result<Vec<MarketResourceRespVO>> {
 		let mut all_servers = Vec::new();
 		let mut cursor: Option<String> = None;
 		for _ in 0..MAX_PAGES {
@@ -105,7 +105,7 @@ impl SourceProvider for McpRegistryProvider {
 	async fn fetch_payload(
 		&self,
 		_client: &Client,
-		resource: &MarketResource,
+		resource: &MarketResourceRespVO,
 		_token: Option<&str>,
 	) -> Result<InstallPayload> {
 		let server_def = match &resource.install_manifest {
@@ -170,11 +170,11 @@ async fn fetch_servers_page(
 	Ok((servers, next_cursor))
 }
 
-/// 把响应体 servers 数组里的一条归一化为 MarketResource; 支持两种形状: 官方当前的
+/// 把响应体 servers 数组里的一条归一化为 MarketResourceRespVO; 支持两种形状: 官方当前的
 /// `{server: {...}, _meta: {...}}` 嵌套形态, 以及(防御性地)server 字段被拍平到顶层的形态,
 /// "server" 键存在则取之, 否则把条目本身当作 server 对象。name 字段缺失视为条目不合法,
 /// 返回 None 交调用方跳过(不让个别脏数据拖垮整次 search)
-fn normalize_server_entry(entry: &Value) -> Option<MarketResource> {
+fn normalize_server_entry(entry: &Value) -> Option<MarketResourceRespVO> {
 	let server = entry.get("server").unwrap_or(entry);
 	let name = server.get("name").and_then(Value::as_str)?.to_string();
 	let description = server
@@ -210,7 +210,7 @@ fn normalize_server_entry(entry: &Value) -> Option<MarketResource> {
 		}
 	};
 
-	Some(MarketResource {
+	Some(MarketResourceRespVO {
 		source_type: SourceId::McpRegistry,
 		res_type: ResourceType::Mcp,
 		ext_id: name.clone(),
@@ -434,8 +434,8 @@ mod tests {
 		}
 	}
 
-	fn sample_market_resource(install_manifest: InstallManifest) -> MarketResource {
-		MarketResource {
+	fn sample_market_resource(install_manifest: InstallManifest) -> MarketResourceRespVO {
+		MarketResourceRespVO {
 			source_type: SourceId::McpRegistry,
 			res_type: ResourceType::Mcp,
 			ext_id: "io.github.acme/weather".to_string(),
@@ -453,7 +453,7 @@ mod tests {
 		}
 	}
 
-	// search: 应从 servers 数组归一化出 2 条 MarketResource; 仅含 npm 包且无环境变量的 server
+	// search: 应从 servers 数组归一化出 2 条 MarketResourceRespVO; 仅含 npm 包且无环境变量的 server
 	// 应产出可直接安装的 InstallManifest::Mcp(command/args 按 npm 惯例组装: npx -y <identifier>);
 	// 含必填/选填环境变量的 server 应产出 InstallManifest::McpTemplate, 必填项收进 required_env,
 	// 选填项(带 default)只占位进 env。author 优先取 repository.url 的 owner 段, 缺失时退化为

@@ -17,7 +17,7 @@ import {
 	type LucideIcon,
 } from 'lucide-react';
 
-import type { AuthAccount, ProviderKind } from '@/api/auth';
+import type { AuthAccountRespVO, ProviderKind } from '@/api/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -32,7 +32,7 @@ const OAUTH_PROVIDERS: { num: number; key: ProviderKind; label: string; icon: Lu
 ];
 
 interface AccountSectionProps {
-	accounts: AuthAccount[];
+	accounts: AuthAccountRespVO[];
 	/** 当前正在处理登录/退出/令牌提交的 provider 数值编码, 用于禁用对应行按钮并提示进行中;
 	 * 无操作进行时为 null */
 	pendingProvider: number | null;

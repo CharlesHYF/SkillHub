@@ -24,8 +24,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 
 import { agentList } from '@/api/agent';
-import type { AgentRow } from '@/api/agent';
-import { activityRecent, dashboardSummary, type DashboardSummary } from '@/api/dashboard';
+import type { AgentRespVO } from '@/api/agent';
+import { activityRecent, dashboardSummary, type DashboardSummaryRespVO } from '@/api/dashboard';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
 import { EmptyState } from '@/components/common/empty-state';
 import { PageHeader } from '@/components/common/page-header';
@@ -46,7 +46,7 @@ const AGENT_LIST_KEY = 'agent-list';
 const RECENT_ACTIVITY_LIMIT = 6;
 
 /** 数据尚未加载完成时统计卡的兜底值, 避免 undefined 访问报错(不是"假数据", 只是加载中的占位) */
-const EMPTY_SUMMARY: DashboardSummary = {
+const EMPTY_SUMMARY: DashboardSummaryRespVO = {
 	skillCount: 0,
 	mcpCount: 0,
 	agentCount: 0,
@@ -85,7 +85,7 @@ const QUICK_ACTIONS: QuickAction[] = [
 
 /** 同步状态概览表列配置: 名称 + 在线状态 + 最后同步时间, 均直接取自 agent_list, 不额外现算
  * 逐 Agent 差异(精确差异见 Sync Center 的 sync_diff, 见 services::dashboard::summary 文档注释) */
-const AGENT_STATUS_COLUMNS: DataTableColumn<AgentRow>[] = [
+const AGENT_STATUS_COLUMNS: DataTableColumn<AgentRespVO>[] = [
 	{
 		key: 'name',
 		header: 'Agent 名称',
