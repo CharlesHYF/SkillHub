@@ -149,4 +149,38 @@ body {
 	html {
 		@apply font-sans;
 	}
+
+	/*
+	 * 全局交互态光标: 按钮/下拉触发器与菜单项/标签页/单选/开关/复选框等一切可交互基元统一显示
+	 * 手型指针, 禁用态统一显示 not-allowed, 不逐个组件手改(Charles: "按钮、下拉框、菜单 item
+	 * 全部都要 cursor pointer")。
+	 * !important 说明: Tailwind v4 的层序是 theme, base, components, utilities(utilities 在
+	 * base 之后声明), 同优先级/同重要性下后声明的层胜出, 与选择器具体度无关。DropdownMenuItem/
+	 * SelectItem/DropdownMenuSubTrigger 等 Radix 基元(components/ui/dropdown-menu.tsx、
+	 * select.tsx)自带 cursor-default 工具类, 该类位于 utilities 层, 不加 !important 的话本条
+	 * base 层规则会被其静默盖过(选择器写对了但视觉不生效), 故显式 !important 越级为最高优先级
+	 * 一档, 确保跨层依然生效; 顺序上"禁用态"规则写在"可交互态"规则之后, 二者同为 !important 时
+	 * 同层内后写的胜出, 保证形如 [role="option"][data-disabled] 这类同时匹配两条规则的元素最终
+	 * 落在 not-allowed。
+	 */
+	button:not(:disabled),
+	[role='button'],
+	[role='menuitem'],
+	[role='menuitemcheckbox'],
+	[role='menuitemradio'],
+	[role='option'],
+	[role='tab'],
+	[role='radio'],
+	[role='switch'],
+	[role='checkbox'],
+	select,
+	summary {
+		cursor: pointer !important;
+	}
+	:disabled,
+	[disabled],
+	[aria-disabled='true'],
+	[data-disabled] {
+		cursor: not-allowed !important;
+	}
 }

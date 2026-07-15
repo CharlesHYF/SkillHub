@@ -2,6 +2,7 @@
 //           "刻意不可序列化"的约定呼应, 见该文件注释); service 固定为 "skillhub", account 由
 //           调用方传入(如 "github:demo@example.com"), 每个 account 对应钥匙串里一条独立条目
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use anyhow::Result;
 use keyring::{Entry, Error as KeyringError};

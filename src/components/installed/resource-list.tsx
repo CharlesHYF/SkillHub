@@ -2,6 +2,7 @@
 //           (占位) + 资源表(DataTable) + 分页; 纯展示 + 回调, 数据获取/选中态由 pages/installed
 //           统一持有(便于本组件单测无需接入真实 Tauri/Query 环境)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { useEffect, useState, Fragment } from 'react';
 import {
 	Search,
@@ -13,11 +14,14 @@ import {
 	ChevronRight,
 	Sparkles,
 	Plug,
+	PackageOpen,
 } from 'lucide-react';
 
-import type { Resource } from '@/api/library';
+import type { ResourceRespVO } from '@/api/library';
 import type { ResourceTypeFilter } from '@/stores/ui';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { EmptyState } from '@/components/common/empty-state';
+import { SkeletonTable } from '@/components/common/skeleton';
 import { TypeBadge } from '@/components/common/type-badge';
 import { SyncStatusBadge } from '@/components/common/sync-status-badge';
 import { Button } from '@/components/ui/button';
@@ -49,7 +53,9 @@ import {
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 interface ResourceListProps {
-	resources: Resource[];
+	resources: ResourceRespVO[];
+	/** 资源库首次加载中: 为真时表格区展示骨架屏而非空态, 避免加载期误判为"暂无资源" */
+	isLoading?: boolean;
 	/** resource.id -> 已关联(desired=1) Agent 数, 由 pages/installed 从 resourceAgentLinks 聚合而来 */
 	linkCountByResource: Map<number, number>;
 	selectedId: number | null;
@@ -57,9 +63,9 @@ interface ResourceListProps {
 	keyword: string;
 	onTypeFilterChange: (filter: ResourceTypeFilter) => void;
 	onKeywordChange: (keyword: string) => void;
-	onSelectResource: (resource: Resource) => void;
-	onToggleEnabled: (resource: Resource) => void;
-	onRequestDelete: (resource: Resource) => void;
+	onSelectResource: (resource: ResourceRespVO) => void;
+	onToggleEnabled: (resource: ResourceRespVO) => void;
+	onRequestDelete: (resource: ResourceRespVO) => void;
 }
 
 /** 分页页码按钮列表: 总页数不多(<=7)时全量展示, 否则展示首尾各 2 页 + 当前页前后 1 页,
@@ -75,6 +81,7 @@ function pageNumbers(current: number, total: number): number[] {
 /** 已安装界面左侧列表区: 分段筛选 + 搜索 + 占位工具栏 + 资源表 + 分页 */
 export function ResourceList({
 	resources,
+	isLoading = false,
 	linkCountByResource,
 	selectedId,
 	typeFilter,
@@ -119,7 +126,7 @@ export function ResourceList({
 		});
 	}
 
-	const columns: DataTableColumn<Resource>[] = [
+	const columns: DataTableColumn<ResourceRespVO>[] = [
 		{
 			key: 'checkbox',
 			header: (
@@ -276,8 +283,18 @@ export function ResourceList({
 			</div>
 
 			<div className="min-h-0 flex-1 overflow-auto rounded-lg border">
-				{resources.length === 0 ? (
-					<p className="py-6 text-center text-sm text-muted-foreground">暂无匹配的资源</p>
+				{isLoading ? (
+					<SkeletonTable rows={6} columns={6} />
+				) : resources.length === 0 ? (
+					<EmptyState
+						icon={PackageOpen}
+						title="暂无匹配的资源"
+						description={
+							keyword || typeFilter
+								? '没有符合当前筛选条件的资源, 试试调整搜索词或切换类型'
+								: '还没有安装任何 Skill 或 MCP, 去资源中心下载一个吧'
+						}
+					/>
 				) : (
 					<DataTable
 						columns={columns}

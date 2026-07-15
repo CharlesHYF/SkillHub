@@ -2,12 +2,13 @@
 //           repo_*), 命令层(commands::dashboard, Task 8)加锁取出 conn 后转调本模块, 呼应
 //           services::sync/services::library 既有的分层约定
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use anyhow::Result;
 use rusqlite::Connection;
 use serde::Serialize;
 
-use crate::infra::repo_activity::{self, ActivityRow};
+use crate::infra::repo_activity::{self, ActivityRespVO};
 use crate::infra::repo_agent;
 use crate::infra::repo_assoc;
 use crate::infra::repo_resource;
@@ -15,7 +16,7 @@ use crate::infra::repo_resource;
 /// 首页统计卡片数据: Skill/MCP 数量、Agent 总数与在线数、待同步数
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct DashboardSummary {
+pub struct DashboardSummaryRespVO {
 	pub skill_count: i64,
 	pub mcp_count: i64,
 	pub agent_count: i64,
@@ -28,14 +29,14 @@ pub struct DashboardSummary {
 /// reconcile(那需要 home 家目录与逐 Agent 文件 IO, 首页汇总只要一个量级参考, 精确差异请去
 /// 同步中心走 sync_diff 逐 Agent 现算); agent_count/online_count 由 agent 表全量行数与其中
 /// status=true(在线/可用)的行数直接算出
-pub fn summary(conn: &Connection) -> Result<DashboardSummary> {
+pub fn summary(conn: &Connection) -> Result<DashboardSummaryRespVO> {
 	let (skill_count, mcp_count) = repo_resource::count_by_type(conn)?;
 	let agents = repo_agent::list(conn)?;
 	let agent_count = agents.len() as i64;
 	let online_count = agents.iter().filter(|row| row.status).count() as i64;
 	let pending_count = repo_assoc::count_pending(conn)?;
 
-	Ok(DashboardSummary {
+	Ok(DashboardSummaryRespVO {
 		skill_count,
 		mcp_count,
 		agent_count,
@@ -45,7 +46,7 @@ pub fn summary(conn: &Connection) -> Result<DashboardSummary> {
 }
 
 /// 查询最近若干条活动记录(薄封装 repo_activity::recent), 供首页"最近变更"列表
-pub fn recent_activity(conn: &Connection, limit: i64) -> Result<Vec<ActivityRow>> {
+pub fn recent_activity(conn: &Connection, limit: i64) -> Result<Vec<ActivityRespVO>> {
 	Ok(repo_activity::recent(conn, limit)?)
 }
 
@@ -113,7 +114,7 @@ mod tests {
 
 		assert_eq!(
 			got,
-			DashboardSummary {
+			DashboardSummaryRespVO {
 				skill_count: 1,
 				mcp_count: 1,
 				agent_count: 2,
@@ -130,7 +131,7 @@ mod tests {
 		let got = summary(&conn).unwrap();
 		assert_eq!(
 			got,
-			DashboardSummary {
+			DashboardSummaryRespVO {
 				skill_count: 0,
 				mcp_count: 0,
 				agent_count: 0,

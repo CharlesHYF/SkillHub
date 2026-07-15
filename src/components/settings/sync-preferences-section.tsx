@@ -3,9 +3,10 @@
 //           纯展示 + onChange(patch), 数据由 pages/settings 统一持有(与 export-panel 的
 //           options/onOptionsChange 同一惯例)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { Repeat } from 'lucide-react';
 
-import type { Settings } from '@/api/setting';
+import type { SettingRespVO } from '@/api/setting';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 
@@ -43,8 +44,8 @@ const SYNC_TOGGLES: SyncToggleConfig[] = [
 ];
 
 interface SyncPreferencesSectionProps {
-	settings: Pick<Settings, SyncToggleKey>;
-	onChange: (patch: Partial<Settings>) => void;
+	settings: Pick<SettingRespVO, SyncToggleKey>;
+	onChange: (patch: Partial<SettingRespVO>) => void;
 }
 
 /** 设置界面"同步偏好"分区: 还原原型第 7 屏左下卡片 */
@@ -71,7 +72,7 @@ export function SyncPreferencesSection({ settings, onChange }: SyncPreferencesSe
 						<Switch
 							checked={settings[toggle.key]}
 							onCheckedChange={(checked) =>
-								onChange({ [toggle.key]: checked } as Partial<Settings>)
+								onChange({ [toggle.key]: checked } as Partial<SettingRespVO>)
 							}
 							aria-label={toggle.label}
 						/>

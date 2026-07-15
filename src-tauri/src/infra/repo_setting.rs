@@ -2,6 +2,7 @@
 //           export_bundle 的 include_config 分支)把设置整表落地为 settings.json; 显式列名/
 //           禁 SELECT */全参数化查询(阿里巴巴泰山版数据库规约)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use rusqlite::{params, Connection, Row};
 use serde::Serialize;

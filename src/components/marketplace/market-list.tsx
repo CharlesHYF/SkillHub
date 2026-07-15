@@ -2,10 +2,13 @@
 //           最近更新) + 分类下拉 + 结果计数 + 排序下拉 + 卡片网格(MarketCard) + 分页; 纯展示 +
 //           回调, 查询态(关键字/分段/分类/排序/分页)与安装 mutation 由 pages/marketplace 统一持有
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { Fragment } from 'react';
-import { Search, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ChevronDown, ChevronLeft, ChevronRight, SearchX } from 'lucide-react';
 
-import type { MarketResource } from '@/api/market';
+import type { MarketResourceRespVO } from '@/api/market';
+import { EmptyState } from '@/components/common/empty-state';
+import { SkeletonCards } from '@/components/common/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -53,9 +56,13 @@ function pageNumbers(current: number, total: number): number[] {
 
 interface MarketListProps {
 	/** market_search 当页命中(未经 chip 客户端筛选) */
-	items: MarketResource[];
+	items: MarketResourceRespVO[];
 	/** 服务端总命中数(不受分页/chip 客户端筛选影响) */
 	total: number;
+	/** 搜索请求进行中(含挂载时自动触发的市场缓存刷新); 为真时卡片网格区展示加载态而非"暂无
+	 * 匹配的资源"空态, 避免刷新尚未完成就误判为"确实没有资源"。默认 false, 具体视觉呈现留给
+	 * 后续任务打磨(本任务只保证加载态存在) */
+	isLoading?: boolean;
 	/** 分类下拉选项(由 pages/marketplace 从当前已加载数据派生, 不含"全部分类") */
 	categories: string[];
 	resTypeFilter: 'skill' | 'mcp';
@@ -79,14 +86,15 @@ interface MarketListProps {
 	onSortChange: (sort: number) => void;
 	onPageChange: (page: number) => void;
 	onPageSizeChange: (pageSize: number) => void;
-	onSelectItem: (item: MarketResource) => void;
-	onDownload: (item: MarketResource) => void;
+	onSelectItem: (item: MarketResourceRespVO) => void;
+	onDownload: (item: MarketResourceRespVO) => void;
 }
 
 /** 资源中心左侧列表区: 搜索/分段/筛选/排序 + 卡片网格 + 分页, 还原原型第 2 屏 */
 export function MarketList({
 	items,
 	total,
+	isLoading = false,
 	categories,
 	resTypeFilter,
 	keyword,
@@ -121,7 +129,7 @@ export function MarketList({
 	const currentSortLabel = SORT_OPTIONS.find((o) => o.value === sort)?.label ?? '推荐';
 
 	return (
-		<div className="flex h-full min-w-0 flex-1 flex-col gap-4">
+		<div className="@container flex h-full min-w-0 flex-1 flex-col gap-4">
 			<div className="flex flex-wrap items-center gap-2">
 				<div className="relative min-w-64 flex-1">
 					<Search
@@ -199,11 +207,23 @@ export function MarketList({
 				</DropdownMenu>
 			</div>
 
-			<div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-4 overflow-auto">
-				{visibleItems.length === 0 ? (
-					<p className="col-span-2 py-10 text-center text-sm text-muted-foreground">
-						暂无匹配的资源
-					</p>
+			{/* 卡片网格还原原型: 稳定两列(grid-cols-2), 不用 auto-fill+minmax 按容器宽度自动铺列
+			    (此前的写法在宽屏详情面板收起时会铺出五六列窄卡片, 观感与原型的两列清爽版式不符,
+			    见本任务报告)。仅在详情面板常驻展开、窗口接近应用最小宽 1024(tauri.conf.json
+			    minWidth)时, 卡片网格实际可用宽度会被压缩到不足以舒适容纳两列, 此时用容器查询
+			    (@container, 而非视口媒体查询——是否挤压取决于详情面板是否占走 360px, 与视口宽度
+			    本身是两回事)优雅降级为单列; 500px 断点按"两列各至少约 240px + 网格间距 16px"估算,
+			    与本文件旧版 auto-fill 的单列最小宽约定同一口径 */}
+			<div className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-4 overflow-auto @max-[500px]:grid-cols-1">
+				{isLoading ? (
+					<SkeletonCards count={6} className="col-span-full" />
+				) : visibleItems.length === 0 ? (
+					<EmptyState
+						icon={SearchX}
+						title="暂无匹配的资源"
+						description="没有符合当前搜索或筛选条件的资源, 换个关键字或调整筛选再试试"
+						className="col-span-full"
+					/>
 				) : (
 					visibleItems.map((item) => {
 						const key = marketResourceKey(item);

@@ -1,5 +1,6 @@
 // 文件作用: Agent(本机 AI 工具实例)相关 Tauri command 的类型化封装
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { invoke } from '@tauri-apps/api/core';
 
 /** Agent 种类, 与后端 AgentKind 枚举变体名一一对应 */
@@ -17,7 +18,7 @@ export type AgentKind =
 export type AgentScope = 'Global' | 'Project';
 
 /** agent 表一行 */
-export interface AgentRow {
+export interface AgentRespVO {
 	id: number;
 	agentKind: AgentKind;
 	name: string;
@@ -30,11 +31,11 @@ export interface AgentRow {
 }
 
 /** 探测本机全部已知 AI 工具实例并落库, 返回 Agent 表当前全量 */
-export async function agentDetect(): Promise<AgentRow[]> {
-	return invoke<AgentRow[]>('agent_detect');
+export async function agentDetect(): Promise<AgentRespVO[]> {
+	return invoke<AgentRespVO[]>('agent_detect');
 }
 
 /** 查询 Agent 表当前全量, 不触发探测 */
-export async function agentList(): Promise<AgentRow[]> {
-	return invoke<AgentRow[]>('agent_list');
+export async function agentList(): Promise<AgentRespVO[]> {
+	return invoke<AgentRespVO[]>('agent_list');
 }

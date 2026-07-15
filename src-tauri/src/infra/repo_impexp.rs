@@ -1,6 +1,7 @@
 // 文件作用: import_export_log 表仓储 —— 导入导出历史写入与最近记录查询(原型第 6 屏"导入导出历史"
 //           表格来源), 显式列名/禁 SELECT */全参数化查询(阿里巴巴泰山版数据库规约)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use rusqlite::{params, Connection, Row};
 use serde::Serialize;
@@ -8,7 +9,7 @@ use serde::Serialize;
 /// import_export_log 表一行, 字段名与列名逐一对应(create_time 非本仓储关注字段, 不选取)
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct ImpexpRow {
+pub struct ImpexpRespVO {
 	pub id: i64,
 	pub direction: i64,
 	pub file_name: String,
@@ -18,9 +19,9 @@ pub struct ImpexpRow {
 	pub run_time: String,
 }
 
-/// 将一行查询结果映射为 ImpexpRow 实体
-fn row_to_impexp(row: &Row) -> rusqlite::Result<ImpexpRow> {
-	Ok(ImpexpRow {
+/// 将一行查询结果映射为 ImpexpRespVO 实体
+fn row_to_impexp(row: &Row) -> rusqlite::Result<ImpexpRespVO> {
+	Ok(ImpexpRespVO {
 		id: row.get(0)?,
 		direction: row.get(1)?,
 		file_name: row.get(2)?,
@@ -50,7 +51,7 @@ pub fn add(
 }
 
 /// 查询最近若干条导入导出历史, 按 run_time/id 倒序(最新在前)
-pub fn recent(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<ImpexpRow>> {
+pub fn recent(conn: &Connection, limit: i64) -> rusqlite::Result<Vec<ImpexpRespVO>> {
 	let mut stmt = conn.prepare(
 		"SELECT id, direction, file_name, file_format, summary, status, run_time \
 		 FROM import_export_log ORDER BY run_time DESC, id DESC LIMIT ?1",

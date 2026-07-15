@@ -1,13 +1,14 @@
 // 文件作用: SyncPreferencesSection 组件单测(4 个开关的渲染文案与切换回调)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { Settings } from '@/api/setting';
+import type { SettingRespVO } from '@/api/setting';
 import { SyncPreferencesSection } from './sync-preferences-section';
 
 const baseSettings: Pick<
-	Settings,
+	SettingRespVO,
 	'syncAutoNewAgent' | 'syncCheckUpdateOnStart' | 'syncConflictPrompt' | 'syncOnlyEnabled'
 > = {
 	syncAutoNewAgent: true,

@@ -1,13 +1,14 @@
 // 文件作用: Installed 页面集成测试(mock src/api) —— 表格渲染/行选中开面板/卸载确认流程/
 //           同步到全部 Agent 只对在线 Agent 生效
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Resource } from '@/api/library';
-import type { AgentRow } from '@/api/agent';
-import type { ResourceAgentLink } from '@/api/sync';
+import type { ResourceRespVO } from '@/api/library';
+import type { AgentRespVO } from '@/api/agent';
+import type { ResourceAgentLinkRespVO } from '@/api/sync';
 import { useUiStore } from '@/stores/ui';
 import Installed from './installed';
 
@@ -28,7 +29,7 @@ import { libraryList, resourceDelete } from '@/api/library';
 import { resourceAgentLinks, syncApply } from '@/api/sync';
 import { agentList } from '@/api/agent';
 
-function makeResource(overrides: Partial<Resource> = {}): Resource {
+function makeResource(overrides: Partial<ResourceRespVO> = {}): ResourceRespVO {
 	const name = overrides.name ?? 'data-visualizer';
 	return {
 		id: 1,
@@ -123,7 +124,7 @@ describe('Installed 页面', () => {
 	it('同步到全部 Agent 只对在线 Agent 调用 sync_apply', async () => {
 		const resource = makeResource({ id: 1, name: 'data-visualizer' });
 		vi.mocked(libraryList).mockResolvedValue([resource]);
-		const agents: AgentRow[] = [
+		const agents: AgentRespVO[] = [
 			{
 				id: 10,
 				agentKind: 'ClaudeCode',
@@ -148,7 +149,7 @@ describe('Installed 页面', () => {
 			},
 		];
 		vi.mocked(agentList).mockResolvedValue(agents);
-		const links: ResourceAgentLink[] = [
+		const links: ResourceAgentLinkRespVO[] = [
 			{ resourceId: 1, agentId: 10, agentName: 'Claude Code' },
 		];
 		vi.mocked(resourceAgentLinks).mockResolvedValue(links);
@@ -162,5 +163,14 @@ describe('Installed 页面', () => {
 		fireEvent.click(syncButton);
 
 		await waitFor(() => expect(syncApply).toHaveBeenCalledWith([10]));
+	});
+
+	it('不应再渲染手动"刷新"按钮(F1 遗留已移除, 数据改由实时保鲜策略自动刷新)', async () => {
+		vi.mocked(libraryList).mockResolvedValue([
+			makeResource({ id: 1, name: 'data-visualizer' }),
+		]);
+		renderInstalled();
+		expect(await screen.findByText('data-visualizer')).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: /^刷新$/ })).not.toBeInTheDocument();
 	});
 });

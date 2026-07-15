@@ -3,23 +3,28 @@
 //           (无网络 I/O), 只负责加锁取出 conn 与错误类型转换(anyhow::Error -> String, 与
 //           commands::portability 等既有命令同一惯例), 具体逻辑见 services::setting
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use tauri::State;
 
-use crate::domain::setting::Settings;
+use crate::domain::setting::SettingRespVO;
 use crate::services::setting;
 use crate::AppState;
 
-/// 读取当前设置; 见 services::setting::get_all
+/// 读取当前设置; 空的存储目录会被回填为应用数据目录下的默认位置(skills/mcp)并持久化, 使
+/// 设置界面首次进入即展示真实目录而非空占位; 见 services::setting::get_all_with_default_dirs
 #[tauri::command]
-pub fn settings_get(state: State<'_, AppState>) -> Result<Settings, String> {
+pub fn settings_get(state: State<'_, AppState>) -> Result<SettingRespVO, String> {
 	let conn = state.db();
-	setting::get_all(&conn).map_err(|e| e.to_string())
+	setting::get_all_with_default_dirs(&conn, &state.data_dir).map_err(|e| e.to_string())
 }
 
 /// 保存整份设置并回读确认; 见 services::setting::save
 #[tauri::command]
-pub fn settings_save(state: State<'_, AppState>, settings: Settings) -> Result<Settings, String> {
+pub fn settings_save(
+	state: State<'_, AppState>,
+	settings: SettingRespVO,
+) -> Result<SettingRespVO, String> {
 	let conn = state.db();
 	setting::save(&conn, &settings).map_err(|e| e.to_string())
 }

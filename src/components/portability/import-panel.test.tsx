@@ -1,12 +1,13 @@
 // 文件作用: ImportPanel 组件单测(拖拽/文本路径输入 -> 预览渲染 -> 冲突策略/自动同步 -> 开始导入)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { EventCallback } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import type { DragDropEvent } from '@tauri-apps/api/webview';
-import type { ImportPreview } from '@/api/portability';
+import type { ImportPreviewRespVO } from '@/api/portability';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ImportPanel } from './import-panel';
 
@@ -14,7 +15,13 @@ vi.mock('@tauri-apps/api/webview', () => ({
 	getCurrentWebview: vi.fn(),
 }));
 
-const fullPreview: ImportPreview = { skill: 128, mcp: 45, config: 23, agent: 8, schemaOk: true };
+const fullPreview: ImportPreviewRespVO = {
+	skill: 128,
+	mcp: 45,
+	config: 23,
+	agent: 8,
+	schemaOk: true,
+};
 
 function renderPanel(overrides: Partial<React.ComponentProps<typeof ImportPanel>> = {}) {
 	const onPathChange = vi.fn();

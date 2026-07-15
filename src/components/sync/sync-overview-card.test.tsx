@@ -1,11 +1,12 @@
-// 文件作用: SyncOverviewCard 渲染单测(未选中空态/选中后概览计数与上次同步结果展示)
+// 文件作用: SyncOverviewCard 渲染单测(未选中空态/选中后概览计数与上次同步结果展示/配置路径可复制)
 // 创建日期: 2026-07-09
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import type { AgentRow } from '@/api/agent';
+// 修改日期: 2026-07-13
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
+import type { AgentRespVO } from '@/api/agent';
 import { SyncOverviewCard } from './sync-overview-card';
 
-function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
+function makeAgent(overrides: Partial<AgentRespVO> = {}): AgentRespVO {
 	return {
 		id: 1,
 		agentKind: 'ClaudeCode',
@@ -67,5 +68,23 @@ describe('SyncOverviewCard', () => {
 		// 属预期的展示重叠(非 bug), 断言至少各出现一次即可
 		expect(screen.getAllByText('部分同步').length).toBeGreaterThanOrEqual(2);
 		expect(screen.getByText('3 成功 / 2 失败 / 0 跳过')).toBeInTheDocument();
+	});
+
+	it('应展示 Agent 配置路径, 点击"复制配置路径"应把该路径写入剪贴板', () => {
+		const writeText = vi.fn().mockResolvedValue(undefined);
+		vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
+
+		render(
+			<SyncOverviewCard
+				agent={makeAgent({ configPath: '/home/demo/.claude.json' })}
+				diffCounts={{ add: 0, update: 0, remove: 0, total: 0 }}
+			/>,
+		);
+
+		expect(screen.getByText('/home/demo/.claude.json')).toBeInTheDocument();
+		fireEvent.click(screen.getByRole('button', { name: '复制配置路径' }));
+		expect(writeText).toHaveBeenCalledWith('/home/demo/.claude.json');
+
+		vi.unstubAllGlobals();
 	});
 });

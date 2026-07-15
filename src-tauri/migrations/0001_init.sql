@@ -8,7 +8,7 @@ CREATE TABLE resource (
   name          TEXT     NOT NULL DEFAULT '',                -- 资源名(唯一标识, 业务长度<=64)
   display_name  TEXT     NOT NULL DEFAULT '',                -- 展示名(<=128)
   version       TEXT     NOT NULL DEFAULT '',                -- 版本号(<=32)
-  source_type   INTEGER  NOT NULL DEFAULT 0,                 -- 来源: 0-本地导入, 1-官方仓库, 2-第三方仓库
+  source_type   INTEGER  NOT NULL DEFAULT 0,                 -- 来源: 0-本地导入, 1-官方仓库, 2-第三方仓库, 3-Agent导入(M6 BE-2)
   local_path    TEXT     NOT NULL DEFAULT '',                -- 本地路径(<=512)
   enabled       INTEGER  NOT NULL DEFAULT 1,                 -- 是否启用: 0-禁用, 1-启用
   create_time   TEXT     NOT NULL DEFAULT (datetime('now')), -- 创建时间

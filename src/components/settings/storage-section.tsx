@@ -5,16 +5,17 @@
 //           回调传入, 数据与 onChange(patch)一样由 pages/settings 统一持有(与 export-panel 的
 //           options/onOptionsChange 同一惯例)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { FolderOpen, HardDrive } from 'lucide-react';
 
-import type { Settings } from '@/api/setting';
+import type { SettingRespVO } from '@/api/setting';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 
 interface StorageSectionProps {
-	settings: Pick<Settings, 'storageSkillDir' | 'storageMcpDir'>;
-	onChange: (patch: Partial<Settings>) => void;
+	settings: Pick<SettingRespVO, 'storageSkillDir' | 'storageMcpDir'>;
+	onChange: (patch: Partial<SettingRespVO>) => void;
 	/** "浏览"按钮点击回调, 由 pages/settings 接 dialog.ts 的 pickDirectory 实现 */
 	onBrowseSkillDir: () => void;
 	onBrowseMcpDir: () => void;

@@ -1,5 +1,6 @@
 // 文件作用: auth api 层单测
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -7,9 +8,15 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn(async () => []),
 }));
 
-import { authAccounts, authLogin, authEnterToken, authLogout, type AuthAccount } from './auth';
+import {
+	authAccounts,
+	authLogin,
+	authEnterToken,
+	authLogout,
+	type AuthAccountRespVO,
+} from './auth';
 
-const sampleAccount: AuthAccount = {
+const sampleAccount: AuthAccountRespVO = {
 	id: 1,
 	provider: 'GitHub',
 	account: 'demo@example.com',
@@ -34,7 +41,7 @@ describe('auth api', () => {
 	});
 
 	it('authEnterToken 应以 command 名 auth_enter_token 调用并传 provider/token', async () => {
-		const tokenAccount: AuthAccount = { ...sampleAccount, provider: 'Token' };
+		const tokenAccount: AuthAccountRespVO = { ...sampleAccount, provider: 'Token' };
 		vi.mocked(invoke).mockResolvedValueOnce(tokenAccount);
 		const result = await authEnterToken(4, 'ghp_demo123');
 		expect(result).toEqual(tokenAccount);

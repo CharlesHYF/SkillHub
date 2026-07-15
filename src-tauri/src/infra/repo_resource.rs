@@ -1,10 +1,11 @@
 // 文件作用: resource 表仓储 —— insert/list/get/update_meta/set_enabled/delete/count_by_type,
 //           显式列名/禁 SELECT */全参数化查询(阿里巴巴泰山版数据库规约)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use rusqlite::{named_params, params, Connection, OptionalExtension, Row};
 
-use crate::domain::resource::{Resource, ResourceType, SourceType};
+use crate::domain::resource::{ResourceRespVO, ResourceType, SourceType};
 
 /// 新建资源入参: id/create_time/update_time 由数据库生成, 不在此结构体中
 #[derive(Debug, Clone)]
@@ -33,9 +34,9 @@ pub struct ResourceMetaUpdate {
 	pub local_path: String,
 }
 
-/// 将一行查询结果映射为 Resource 实体
-fn row_to_resource(row: &Row) -> rusqlite::Result<Resource> {
-	Ok(Resource {
+/// 将一行查询结果映射为 ResourceRespVO 实体
+fn row_to_resource(row: &Row) -> rusqlite::Result<ResourceRespVO> {
+	Ok(ResourceRespVO {
 		id: row.get(0)?,
 		res_type: ResourceType::from_i64(row.get(1)?),
 		name: row.get(2)?,
@@ -69,7 +70,7 @@ pub fn insert(conn: &Connection, item: &NewResource) -> rusqlite::Result<i64> {
 }
 
 /// 按过滤条件查询资源列表, 按 id 升序; res_type/keyword 均为可选过滤, SQL 文本固定不拼接
-pub fn list(conn: &Connection, filter: &ListFilter) -> rusqlite::Result<Vec<Resource>> {
+pub fn list(conn: &Connection, filter: &ListFilter) -> rusqlite::Result<Vec<ResourceRespVO>> {
 	let res_type_param: Option<i64> = filter.res_type.map(i64::from);
 	let keyword_param: Option<String> = filter.keyword.as_ref().map(|k| format!("%{k}%"));
 	let mut stmt = conn.prepare(
@@ -88,12 +89,31 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> rusqlite::Result<Vec<Reso
 }
 
 /// 按主键查询单条资源, 不存在返回 None(而非 Err)
-pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Option<Resource>> {
+pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Option<ResourceRespVO>> {
 	conn.query_row(
 		"SELECT id, res_type, name, display_name, version, source_type, local_path, enabled, \
 		 create_time, update_time \
 		 FROM resource WHERE id = ?1",
 		params![id],
+		row_to_resource,
+	)
+	.optional()
+}
+
+/// 按 (res_type, name) 精确查询单条资源(与 resource 表的 uk_resource_type_name 唯一索引同一
+/// 维度), 不存在返回 None(而非 Err); name 为精确匹配(非 list 的 keyword 模糊匹配), 供 M6 Task
+/// BE-2(services::agent_import, 从已检测 Agent 反向导入已装 Skill/MCP 到本地库)按类型+名称去重
+/// 时复用 —— 已有同类型同名资源则复用其 id, 不重复落地/不重复插入
+pub fn find_by_type_and_name(
+	conn: &Connection,
+	res_type: ResourceType,
+	name: &str,
+) -> rusqlite::Result<Option<ResourceRespVO>> {
+	conn.query_row(
+		"SELECT id, res_type, name, display_name, version, source_type, local_path, enabled, \
+		 create_time, update_time \
+		 FROM resource WHERE res_type = ?1 AND name = ?2",
+		params![i64::from(res_type), name],
 		row_to_resource,
 	)
 	.optional()
@@ -285,5 +305,37 @@ mod tests {
 		let affected = delete(&conn, id).unwrap();
 		assert_eq!(affected, 1);
 		assert_eq!(get(&conn, id).unwrap(), None);
+	}
+
+	// find_by_type_and_name: 命中时应返回完整资源; 类型相符但名称不同、名称相符但类型不同,
+	// 均不应误命中(精确匹配 (res_type,name) 这一对, 与 uk_resource_type_name 同一维度)
+	#[test]
+	fn find_by_type_and_name_matches_exact_type_and_name_only() {
+		let conn = setup_conn();
+		let id = insert(&conn, &sample_new_resource()).unwrap();
+
+		let found = find_by_type_and_name(&conn, ResourceType::Skill, "demo-skill").unwrap();
+		assert_eq!(found.map(|r| r.id), Some(id));
+
+		assert_eq!(
+			find_by_type_and_name(&conn, ResourceType::Skill, "other-name").unwrap(),
+			None,
+			"名称不同不应命中"
+		);
+		assert_eq!(
+			find_by_type_and_name(&conn, ResourceType::Mcp, "demo-skill").unwrap(),
+			None,
+			"类型不同(同名)不应命中"
+		);
+	}
+
+	// find_by_type_and_name: 查不存在的 (res_type,name) 应返回 None, 不报错
+	#[test]
+	fn find_by_type_and_name_returns_none_when_absent() {
+		let conn = setup_conn();
+		assert_eq!(
+			find_by_type_and_name(&conn, ResourceType::Skill, "nope").unwrap(),
+			None
+		);
 	}
 }

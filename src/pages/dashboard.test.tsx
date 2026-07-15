@@ -1,12 +1,14 @@
 // 文件作用: Dashboard 页面集成测试(mock src/api) —— 统计卡渲染 dashboard_summary、最近变更渲染
-//           activity_recent、快速操作按钮点击各自导航到目标路由、同步状态概览渲染 agent_list
+//           activity_recent、快速操作按钮点击各自导航到目标路由、同步状态概览渲染 agent_list、
+//           不再渲染手动"刷新"按钮(M5 Task F1: 三处数据源改由 refetchInterval 等策略自动保鲜)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { AgentRow } from '@/api/agent';
-import type { ActivityRow, DashboardSummary } from '@/api/dashboard';
+import type { AgentRespVO } from '@/api/agent';
+import type { ActivityRespVO, DashboardSummaryRespVO } from '@/api/dashboard';
 import Dashboard from './dashboard';
 
 vi.mock('@/api/dashboard', () => ({
@@ -26,7 +28,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 import { activityRecent, dashboardSummary } from '@/api/dashboard';
 import { agentList } from '@/api/agent';
 
-function makeSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummary {
+function makeSummary(overrides: Partial<DashboardSummaryRespVO> = {}): DashboardSummaryRespVO {
 	return {
 		skillCount: 128,
 		mcpCount: 45,
@@ -37,7 +39,7 @@ function makeSummary(overrides: Partial<DashboardSummary> = {}): DashboardSummar
 	};
 }
 
-function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
+function makeAgent(overrides: Partial<AgentRespVO> = {}): AgentRespVO {
 	return {
 		id: 1,
 		agentKind: 'ClaudeCode',
@@ -91,7 +93,7 @@ describe('Dashboard 页面', () => {
 			.toISOString()
 			.slice(0, 19)
 			.replace('T', ' ');
-		const rows: ActivityRow[] = [
+		const rows: ActivityRespVO[] = [
 			{
 				id: 1,
 				actType: 1,
@@ -155,18 +157,9 @@ describe('Dashboard 页面', () => {
 		expect(mockNavigate).toHaveBeenCalledWith('/sync');
 	});
 
-	it('点击顶部刷新按钮应重新拉取三项数据', async () => {
-		const user = userEvent.setup();
+	it('不应再渲染手动"刷新"按钮', async () => {
 		renderDashboard();
 		await screen.findByText('128');
-		vi.mocked(dashboardSummary).mockClear();
-		vi.mocked(activityRecent).mockClear();
-		vi.mocked(agentList).mockClear();
-
-		await user.click(screen.getByRole('button', { name: /刷新/ }));
-
-		expect(dashboardSummary).toHaveBeenCalled();
-		expect(activityRecent).toHaveBeenCalled();
-		expect(agentList).toHaveBeenCalled();
+		expect(screen.queryByRole('button', { name: /^刷新$/ })).not.toBeInTheDocument();
 	});
 });

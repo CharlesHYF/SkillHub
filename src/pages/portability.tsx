@@ -4,10 +4,12 @@
 //           importBundle 提交; 两者成功后失效历史列表 Query 触发刷新, 导入成功后额外清空路径。
 //           导出目标路径/导入文件路径均可直接在文本框输入, 也可点"选择保存位置"/"选择文件"经
 //           src/lib/dialog.ts 弹出原生对话框拿真实路径回填(取消则维持原值不变); 拖拽区(见
-//           import-panel)取到路径后走的是同一个 setImportPath, 三条路径殊途同归
+//           import-panel)取到路径后走的是同一个 setImportPath, 三条路径殊途同归。
+//           M5 Task F1: 移除手动"刷新"按钮, 历史列表改由 refetchInterval 等策略自动保鲜
+//           (见 lib/query.ts)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { useState } from 'react';
-import { RefreshCw } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
@@ -16,13 +18,14 @@ import {
 	importPreview,
 	impexpHistory,
 	type ConflictStrategy,
-	type ExportOptions,
+	type ExportReqVO,
 } from '@/api/portability';
+import { PageHeader } from '@/components/common/page-header';
 import { ExportPanel } from '@/components/portability/export-panel';
 import { ImportPanel } from '@/components/portability/import-panel';
 import { ImpexpHistoryTable } from '@/components/portability/impexp-history-table';
 import { FORMAT_OPTIONS } from '@/components/portability/impexp-display';
-import { Button } from '@/components/ui/button';
+import { LIVE_QUERY_OPTIONS } from '@/lib/query';
 import { pickOpenFile, pickSaveFile } from '@/lib/dialog';
 
 /** 导入包"选择文件"对话框的固定过滤器: 支持 zip/json/tar/gz 四种格式, 不区分当前未选定的导出
@@ -31,7 +34,7 @@ const IMPORT_FILE_FILTERS = [{ name: '导入包', extensions: ['zip', 'json', 't
 
 /** 导出保存对话框的过滤器: 按当前所选目标格式(zip/json/tar)生成单一扩展名过滤器, 扩展名取自
  * FORMAT_OPTIONS 的既有措辞, 避免与导出面板的格式文案重复维护一份映射 */
-function exportSaveDialogFilters(format: ExportOptions['format']) {
+function exportSaveDialogFilters(format: ExportReqVO['format']) {
 	const ext = FORMAT_OPTIONS.find((opt) => opt.value === format)?.label ?? 'zip';
 	return [{ name: `导出包 (.${ext})`, extensions: [ext] }];
 }
@@ -42,7 +45,7 @@ const IMPORT_PREVIEW_KEY = 'import-preview';
 const HISTORY_LIMIT = 20;
 
 /** 导出选项默认值: 与原型截图一致 —— 全部勾选/全部数据/zip/含配置/含版本锁定 */
-const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
+const DEFAULT_EXPORT_OPTIONS: ExportReqVO = {
 	includeSkills: true,
 	includeMcp: true,
 	scope: 0,
@@ -55,7 +58,7 @@ const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
 export default function Portability() {
 	const queryClient = useQueryClient();
 
-	const [exportOptions, setExportOptions] = useState<ExportOptions>(DEFAULT_EXPORT_OPTIONS);
+	const [exportOptions, setExportOptions] = useState<ExportReqVO>(DEFAULT_EXPORT_OPTIONS);
 	// 导出目标路径: 可直接在文本框输入, 也可经"选择保存位置"原生对话框拿路径回填
 	const [exportOutPath, setExportOutPath] = useState('');
 
@@ -66,6 +69,7 @@ export default function Portability() {
 	const historyQuery = useQuery({
 		queryKey: [IMPEXP_HISTORY_KEY, HISTORY_LIMIT],
 		queryFn: () => impexpHistory(HISTORY_LIMIT),
+		...LIVE_QUERY_OPTIONS,
 	});
 
 	// 选定路径后自动预览(不必再点一次"预览"), 路径为空时不发请求
@@ -113,16 +117,10 @@ export default function Portability() {
 
 	return (
 		<div className="flex h-full flex-col gap-4">
-			<header className="flex items-center justify-between">
-				<h1 className="text-2xl font-bold">导入导出 / Import & Export</h1>
-				<Button variant="outline" onClick={() => historyQuery.refetch()}>
-					<RefreshCw
-						size={14}
-						className={historyQuery.isFetching ? 'animate-spin' : undefined}
-					/>
-					刷新
-				</Button>
-			</header>
+			<PageHeader
+				title="导入导出 / Import & Export"
+				description="把本地配置导出为迁移包, 或从迁移包导入到本地库"
+			/>
 
 			<div className="grid grid-cols-2 gap-4">
 				<ExportPanel
@@ -149,7 +147,7 @@ export default function Portability() {
 				/>
 			</div>
 
-			<ImpexpHistoryTable rows={historyQuery.data ?? []} />
+			<ImpexpHistoryTable rows={historyQuery.data ?? []} isLoading={historyQuery.isLoading} />
 		</div>
 	);
 }

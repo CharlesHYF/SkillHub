@@ -5,8 +5,12 @@
 //           的 json_mcp_agent_configs。Skill 的落地读写(read_state.skills/apply 里 Skill 项)
 //           已接入 skill_target(见 SkillTarget, Task 5/7b); MCP 的落地写入(apply 里 Mcp 项)
 //           采取"整份读入 -> 内存合并 -> 备份 -> 整份写回"策略, 务必保留配置文件里用户自己的
-//           其它服务器与其它顶层键。
+//           其它服务器与其它顶层键。本任务(新增 CodeBuddy/WorkBuddy)追加复用本适配器接入这两款
+//           工具(同为 JSON mcpServers 形态), 其中 CodeBuddy 官方文档未提供 Skill 落地约定,
+//           构造时传入 SkillTarget::None 占位, supports() 据此把 Skill 能力如实汇报为 false
+//           (见下方 supports 实现), 不再对"是否支持 Skill"一律写死为 true。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -17,7 +21,7 @@ use serde_json::Value;
 
 use crate::domain::agent::{ActualState, AgentKind, AgentScope, DetectedAgent, McpServerDef};
 use crate::domain::resource::ResourceType;
-use crate::domain::sync::{DesiredPayload, DiffAction, DiffItem, DiffPlan, ItemOutcome};
+use crate::domain::sync::{DesiredPayload, DiffAction, DiffItem, DiffPlanRespVO, ItemOutcome};
 
 use super::skill_target::SkillTarget;
 use super::util::{apply_skill_item, backup_file, err_outcome, ok_outcome};
@@ -136,9 +140,15 @@ impl AgentAdapter for JsonMcpAdapter {
 		self.kind
 	}
 
-	/// 六款工具均可托管 MCP 与 Skill(读取与写入均已接入, 见 read_state/apply)
+	/// 均可托管 MCP; Skill 能力取决于构造时传入的 skill_target 是否为真正落地形态 ——
+	/// SkillTarget::None(目前仅 CodeBuddy)代表该工具官方文档未提供任何 Skill 落地约定,
+	/// 如实汇报 supports(Skill)=false, 其余 skill_target(ClaudeSkillsDir/RulesDir/
+	/// InstructionsFile)均视为已接入 Skill 读写, 汇报 true
 	fn supports(&self, ty: ResourceType) -> bool {
-		matches!(ty, ResourceType::Skill | ResourceType::Mcp)
+		match ty {
+			ResourceType::Mcp => true,
+			ResourceType::Skill => !matches!(self.skill_target, SkillTarget::None),
+		}
 	}
 
 	/// 候选路径里第一个存在的文件即视为该工具已安装; 找不到任何候选返回空表(未安装/未配置)
@@ -184,7 +194,7 @@ impl AgentAdapter for JsonMcpAdapter {
 	/// remove_skill(见 apply_skill_item), 与 Mcp 项的落地位置互不相干。返回的 outcomes 顺序
 	/// 为"先 Mcp 项(按 items 原有顺序), 再 Skill 项(按 items 原有顺序)", 调用方应按 name 匹配
 	/// 而非依赖顺序
-	fn apply(&self, agent: &DetectedAgent, plan: &DiffPlan) -> Result<Vec<ItemOutcome>> {
+	fn apply(&self, agent: &DetectedAgent, plan: &DiffPlanRespVO) -> Result<Vec<ItemOutcome>> {
 		let path = PathBuf::from(&agent.config_path);
 		let mut outcomes = Vec::new();
 
@@ -206,6 +216,12 @@ impl AgentAdapter for JsonMcpAdapter {
 		}
 
 		Ok(outcomes)
+	}
+
+	/// 转发给 self.skill_target.export_skill(见 SkillTarget::export_skill, M6 Task BE-2 从已
+	/// 检测 Agent 反向导入已装 Skill 到本地库所需的"读回可落地内容"), 不重复实现
+	fn export_skill(&self, name: &str, dest_dir: &Path) -> Result<bool> {
+		self.skill_target.export_skill(&self.home, name, dest_dir)
 	}
 }
 
@@ -658,7 +674,7 @@ mod tests {
 			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		let probe = probe_for(dir.path(), ".claude.json");
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_diff_item(
 				DiffAction::Add,
 				"newSrv",
@@ -706,7 +722,7 @@ mod tests {
 			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		let probe = probe_for(dir.path(), ".claude.json");
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_diff_item(
 				DiffAction::Update,
 				"target",
@@ -742,7 +758,7 @@ mod tests {
 			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		let probe = probe_for(dir.path(), ".claude.json");
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_remove_item("toRemove")],
 		};
 
@@ -770,7 +786,7 @@ mod tests {
 			},
 		);
 		let probe = probe_for(dir.path(), ".cursor/mcp.json");
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_diff_item(
 				DiffAction::Add,
 				"newSrv",
@@ -813,7 +829,7 @@ mod tests {
 			payload: None, // Add 却没带 payload, 属脏数据
 		};
 		let good_item = mcp_diff_item(DiffAction::Add, "goodSrv", "node", &["index.js"]);
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![bad_item, good_item],
 		};
 
@@ -851,7 +867,7 @@ mod tests {
 			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
 		);
 		let probe = probe_for(dir.path(), ".claude.json");
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![DiffItem {
 				res_type: ResourceType::Skill,
 				name: "demo-skill".to_string(),
@@ -870,5 +886,82 @@ mod tests {
 
 		let installed = dir.path().join(".claude/skills/demo-skill/SKILL.md");
 		assert!(installed.exists());
+	}
+
+	// export_skill: 应转发给 skill_target.export_skill, 把已装 Skill 内容导出到指定目录
+	// (供 M6 Task BE-2 从已检测 Agent 反向导入使用); 名称不存在应返回 Ok(false)
+	#[test]
+	fn export_skill_delegates_to_skill_target() {
+		let dir = tempdir().unwrap();
+		let skill_dir = dir.path().join(".claude/skills/demo-skill");
+		fs::create_dir_all(&skill_dir).unwrap();
+		fs::write(
+			skill_dir.join("SKILL.md"),
+			"---\nversion: 1.0.0\n---\n内容\n",
+		)
+		.unwrap();
+
+		let adapter = JsonMcpAdapter::new(
+			AgentKind::ClaudeCode,
+			dir.path().to_path_buf(),
+			vec![PathBuf::from(".claude.json")],
+			"mcpServers",
+			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
+		);
+
+		let dest = dir.path().join("exported/demo-skill");
+		let ok = adapter.export_skill("demo-skill", &dest).unwrap();
+		assert!(ok);
+		assert_eq!(
+			fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+			"---\nversion: 1.0.0\n---\n内容\n"
+		);
+
+		assert!(!adapter
+			.export_skill("no-such-skill", &dir.path().join("exported/nope"))
+			.unwrap());
+	}
+
+	// supports: skill_target 为 SkillTarget::None(CodeBuddy 纯 MCP 场景)时应如实汇报
+	// supports(Skill)=false, 但 supports(Mcp) 不受影响仍为 true
+	#[test]
+	fn supports_reports_no_skill_when_skill_target_is_none() {
+		let dir = tempdir().unwrap();
+		let adapter = JsonMcpAdapter::new(
+			AgentKind::ClaudeCode,
+			dir.path().to_path_buf(),
+			vec![PathBuf::from(".claude.json")],
+			"mcpServers",
+			SkillTarget::None,
+		);
+
+		assert!(adapter.supports(ResourceType::Mcp));
+		assert!(!adapter.supports(ResourceType::Skill));
+	}
+
+	// supports: 其余三种真正落地形态(ClaudeSkillsDir/RulesDir/InstructionsFile)均应继续
+	// 汇报 supports(Skill)=true, 与新增的 None 分支互不影响(回归既有 6+VSCode 款工具的行为)
+	#[test]
+	fn supports_reports_skill_true_for_real_skill_targets() {
+		let dir = tempdir().unwrap();
+		let real_targets = vec![
+			SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills")),
+			SkillTarget::RulesDir {
+				dir: PathBuf::from(".cursor/rules"),
+				ext: "mdc".to_string(),
+			},
+			SkillTarget::InstructionsFile(PathBuf::from("GEMINI.md")),
+		];
+		for target in real_targets {
+			let adapter = JsonMcpAdapter::new(
+				AgentKind::ClaudeCode,
+				dir.path().to_path_buf(),
+				vec![PathBuf::from(".claude.json")],
+				"mcpServers",
+				target,
+			);
+			assert!(adapter.supports(ResourceType::Mcp));
+			assert!(adapter.supports(ResourceType::Skill));
+		}
 	}
 }

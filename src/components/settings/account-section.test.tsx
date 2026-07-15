@@ -1,12 +1,13 @@
 // 文件作用: AccountSection 组件单测(已连接/未连接展示、登录/退出/管理令牌回调、管理全部令牌展开)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { AuthAccount } from '@/api/auth';
+import type { AuthAccountRespVO } from '@/api/auth';
 import { AccountSection } from './account-section';
 
-function makeAccount(overrides: Partial<AuthAccount> = {}): AuthAccount {
+function makeAccount(overrides: Partial<AuthAccountRespVO> = {}): AuthAccountRespVO {
 	return {
 		id: 1,
 		provider: 'GitHub',

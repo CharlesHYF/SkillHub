@@ -2,6 +2,7 @@
 //           AuthKind(市场源要求的认证类型)、InstallPayload/FileEntry(fetch_payload 的产物形状),
 //           以及 all_sources 全量源注册表。三源(github_skills/mcp_registry/github_mcp)均已注册
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 pub mod github_mcp;
 pub mod github_skills;
@@ -11,7 +12,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 
 use crate::domain::agent::McpServerDef;
-use crate::domain::market::{MarketResource, Query, SourceId};
+use crate::domain::market::{MarketResourceRespVO, Query, SourceId};
 use github_mcp::GithubMcpProvider;
 use github_skills::GithubSkillsProvider;
 use mcp_registry::McpRegistryProvider;
@@ -66,13 +67,13 @@ pub trait SourceProvider: Send + Sync {
 		client: &Client,
 		query: &Query,
 		token: Option<&str>,
-	) -> anyhow::Result<Vec<MarketResource>>;
+	) -> anyhow::Result<Vec<MarketResourceRespVO>>;
 
 	/// 拉取某条资源的完整安装内容(如 Skill 子目录下的全部文件, 或 MCP 服务定义)
 	async fn fetch_payload(
 		&self,
 		client: &Client,
-		resource: &MarketResource,
+		resource: &MarketResourceRespVO,
 		token: Option<&str>,
 	) -> anyhow::Result<InstallPayload>;
 

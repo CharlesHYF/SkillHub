@@ -8,6 +8,7 @@
 //           SkillTarget, Task 5/7b), Codex 映射到 InstructionsFile("AGENTS.md")(见
 //           adapter::mod::all_adapters)。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -18,7 +19,7 @@ use toml::{Table, Value};
 
 use crate::domain::agent::{ActualState, AgentKind, AgentScope, DetectedAgent, McpServerDef};
 use crate::domain::resource::ResourceType;
-use crate::domain::sync::{DesiredPayload, DiffAction, DiffItem, DiffPlan, ItemOutcome};
+use crate::domain::sync::{DesiredPayload, DiffAction, DiffItem, DiffPlanRespVO, ItemOutcome};
 
 use super::skill_target::SkillTarget;
 use super::util::{apply_skill_item, backup_file, err_outcome, ok_outcome};
@@ -170,7 +171,7 @@ impl AgentAdapter for CodexAdapter {
 	/// remove_skill(见 apply_skill_item), 与 Mcp 项的落地位置(AGENTS.md)互不相干。返回的
 	/// outcomes 顺序为"先 Mcp 项(按 items 原有顺序), 再 Skill 项(按 items 原有顺序)", 调用方
 	/// 应按 name 匹配而非依赖顺序
-	fn apply(&self, agent: &DetectedAgent, plan: &DiffPlan) -> Result<Vec<ItemOutcome>> {
+	fn apply(&self, agent: &DetectedAgent, plan: &DiffPlanRespVO) -> Result<Vec<ItemOutcome>> {
 		let path = PathBuf::from(&agent.config_path);
 		let mut outcomes = Vec::new();
 
@@ -192,6 +193,12 @@ impl AgentAdapter for CodexAdapter {
 		}
 
 		Ok(outcomes)
+	}
+
+	/// 转发给 self.skill_target.export_skill(见 SkillTarget::export_skill, M6 Task BE-2 从已
+	/// 检测 Agent 反向导入已装 Skill 到本地库所需的"读回可落地内容"), 不重复实现
+	fn export_skill(&self, name: &str, dest_dir: &Path) -> Result<bool> {
+		self.skill_target.export_skill(&self.home, name, dest_dir)
 	}
 }
 
@@ -556,7 +563,7 @@ mod tests {
 			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
 		);
 		let probe = probe_at(&config_path);
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_diff_item(
 				DiffAction::Add,
 				"newSrv",
@@ -608,7 +615,7 @@ mod tests {
 			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
 		);
 		let probe = probe_at(&config_path);
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_diff_item(
 				DiffAction::Update,
 				"target",
@@ -648,7 +655,7 @@ mod tests {
 			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
 		);
 		let probe = probe_at(&config_path);
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_remove_item("toRemove")],
 		};
 
@@ -674,7 +681,7 @@ mod tests {
 		);
 		let config_path = dir.path().join(".codex/config.toml");
 		let probe = probe_at(&config_path);
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![mcp_diff_item(
 				DiffAction::Add,
 				"newSrv",
@@ -716,7 +723,7 @@ mod tests {
 			payload: None, // Add 却没带 payload, 属脏数据
 		};
 		let good_item = mcp_diff_item(DiffAction::Add, "goodSrv", "node", &["index.js"]);
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![bad_item, good_item],
 		};
 
@@ -756,7 +763,7 @@ mod tests {
 			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
 		);
 		let probe = probe_at(&config_path);
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![DiffItem {
 				res_type: ResourceType::Skill,
 				name: "demo-skill".to_string(),
@@ -776,5 +783,34 @@ mod tests {
 		let agents_md = fs::read_to_string(dir.path().join("AGENTS.md")).unwrap();
 		assert!(agents_md.contains("<!-- skillhub:start:demo-skill@1.0.0 -->"));
 		assert!(agents_md.contains("内容"));
+	}
+
+	// export_skill: 应转发给 skill_target.export_skill(InstructionsFile 形态), 从 AGENTS.md
+	// 的标记块里取出内容(供 M6 Task BE-2 从已检测 Agent 反向导入使用); 名称不存在应返回 Ok(false)
+	#[test]
+	fn export_skill_delegates_to_skill_target() {
+		let dir = tempdir().unwrap();
+		fs::write(
+			dir.path().join("AGENTS.md"),
+			"<!-- skillhub:start:demo-skill@2.0.0 -->\n内容正文\n<!-- skillhub:end:demo-skill -->\n",
+		)
+		.unwrap();
+
+		let adapter = CodexAdapter::new(
+			dir.path().to_path_buf(),
+			SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md")),
+		);
+
+		let dest = dir.path().join("exported/demo-skill");
+		let ok = adapter.export_skill("demo-skill", &dest).unwrap();
+		assert!(ok);
+		assert_eq!(
+			fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+			"内容正文"
+		);
+
+		assert!(!adapter
+			.export_skill("no-such-skill", &dir.path().join("exported/nope"))
+			.unwrap());
 	}
 }

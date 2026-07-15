@@ -1,5 +1,6 @@
 // 文件作用: library api 层单测
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -14,10 +15,11 @@ import {
 	resourceImportLocal,
 	resourceSetEnabled,
 	resourceDelete,
-	type Resource,
+	libraryImportFromAgents,
+	type ResourceRespVO,
 } from './library';
 
-const sampleResource: Resource = {
+const sampleResource: ResourceRespVO = {
 	id: 1,
 	resType: 'Skill',
 	name: 'demo-skill',
@@ -84,5 +86,12 @@ describe('library api', () => {
 	it('resourceDelete 以 command 名 resource_delete 调用并传 id', async () => {
 		await resourceDelete(1);
 		expect(vi.mocked(invoke)).toHaveBeenCalledWith('resource_delete', { id: 1 });
+	});
+
+	it('libraryImportFromAgents 以 command 名 library_import_from_agents 调用, 无入参, 并原样返回结果', async () => {
+		vi.mocked(invoke).mockResolvedValueOnce({ imported: 2, skipped: 1, agents: 3 });
+		const outcome = await libraryImportFromAgents();
+		expect(outcome).toEqual({ imported: 2, skipped: 1, agents: 3 });
+		expect(vi.mocked(invoke)).toHaveBeenCalledWith('library_import_from_agents');
 	});
 });

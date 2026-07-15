@@ -1,7 +1,8 @@
-// 文件作用: 设置(Settings)相关 Tauri command 的类型化封装 —— 读取设置(settings_get)、保存设置
-//           (settings_save)、读取应用版本号(app_version)。Settings 字段形状与后端
-//           domain::setting::Settings 逐字段对齐(serde camelCase 序列化, 字段顺序无关)
+// 文件作用: 设置(SettingRespVO)相关 Tauri command 的类型化封装 —— 读取设置(settings_get)、保存设置
+//           (settings_save)、读取应用版本号(app_version)。SettingRespVO 字段形状与后端
+//           domain::setting::SettingRespVO 逐字段对齐(serde camelCase 序列化, 字段顺序无关)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { invoke } from '@tauri-apps/api/core';
 
 /** 网络代理模式: 0 系统默认 / 1 不使用 / 2 手动 */
@@ -10,9 +11,9 @@ export type ProxyMode = 0 | 1 | 2;
 /** 更新通道: 0 Stable(稳定版) / 1 Beta(测试版) */
 export type UpdateChannel = 0 | 1;
 
-/** 应用设置, 与后端 domain::setting::Settings 一一对应(该结构体标了 #[serde(rename_all =
+/** 应用设置, 与后端 domain::setting::SettingRespVO 一一对应(该结构体标了 #[serde(rename_all =
  * "camelCase")], 故 storage_skill_dir -> storageSkillDir 等) */
-export interface Settings {
+export interface SettingRespVO {
 	/** 本地 Skill 目录: 存放下载的 Skill 包与配置文件 */
 	storageSkillDir: string;
 	/** 本地 MCP 目录: 存放 MCP 服务与配置文件 */
@@ -38,13 +39,13 @@ export interface Settings {
 }
 
 /** 读取当前设置(未曾保存过时, 后端返回其内置默认值) */
-export async function settingsGet(): Promise<Settings> {
-	return invoke<Settings>('settings_get');
+export async function settingsGet(): Promise<SettingRespVO> {
+	return invoke<SettingRespVO>('settings_get');
 }
 
 /** 整份保存设置(全量覆盖), 返回落库后的设置(供调用方以此为最新基准) */
-export async function settingsSave(settings: Settings): Promise<Settings> {
-	return invoke<Settings>('settings_save', { settings });
+export async function settingsSave(settings: SettingRespVO): Promise<SettingRespVO> {
+	return invoke<SettingRespVO>('settings_save', { settings });
 }
 
 /** 读取当前应用版本号(如 "0.1.0") */

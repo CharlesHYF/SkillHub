@@ -1,18 +1,26 @@
-// 文件作用: 已安装(Installed)界面(原型第 4 屏) —— 顶部标题+刷新, 左侧资源列表(ResourceList),
+// 文件作用: 已安装(Installed)界面(原型第 4 屏) —— 顶部标题, 左侧资源列表(ResourceList),
 //           右侧详情面板(ResourceDetailPanel), 卸载二次确认(UninstallDialog); 数据经
-//           library_list/resourceAgentLinks 获取, 操作后失效相关 Query 触发刷新
+//           library_list/resourceAgentLinks 获取, 操作后失效相关 Query 触发刷新。
+//           M5 Task F2: 移除 F1 遗留的手动"刷新"按钮, 三处数据源(资源库/关联/Agent 列表)改由
+//           实时保鲜策略(见 lib/query.ts)自动刷新, 与其余屏一致; 资源表加载中用骨架屏
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { useMemo, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
-import { libraryList, resourceDelete, resourceSetEnabled, type Resource } from '@/api/library';
+import {
+	libraryList,
+	resourceDelete,
+	resourceSetEnabled,
+	type ResourceRespVO,
+} from '@/api/library';
 import { agentList } from '@/api/agent';
 import { resourceAgentLinks, syncApply } from '@/api/sync';
+import { PageHeader } from '@/components/common/page-header';
 import { ResourceDetailPanel } from '@/components/installed/resource-detail-panel';
 import { ResourceList } from '@/components/installed/resource-list';
 import { UninstallDialog } from '@/components/installed/uninstall-dialog';
-import { Button } from '@/components/ui/button';
+import { LIVE_QUERY_OPTIONS } from '@/lib/query';
 import { useUiStore } from '@/stores/ui';
 
 /** 前端小写 ResourceKind -> 后端 library_list 的 res_type 数值编码(1-Skill, 2-Mcp) */
@@ -33,7 +41,7 @@ export default function Installed() {
 		setKeyword,
 		setSelectedResourceId,
 	} = useUiStore();
-	const [pendingDelete, setPendingDelete] = useState<Resource | null>(null);
+	const [pendingDelete, setPendingDelete] = useState<ResourceRespVO | null>(null);
 
 	const resourcesQuery = useQuery({
 		queryKey: [LIBRARY_LIST_KEY, typeFilter, keyword],
@@ -42,16 +50,19 @@ export default function Installed() {
 				typeFilter ? RES_TYPE_CODE[typeFilter] : undefined,
 				keyword.trim() || undefined,
 			),
+		...LIVE_QUERY_OPTIONS,
 	});
 
 	const linksQuery = useQuery({
 		queryKey: [RESOURCE_AGENT_LINKS_KEY],
 		queryFn: resourceAgentLinks,
+		...LIVE_QUERY_OPTIONS,
 	});
 
 	const agentsQuery = useQuery({
 		queryKey: [AGENT_LIST_KEY],
 		queryFn: agentList,
+		...LIVE_QUERY_OPTIONS,
 	});
 
 	// 后端按 id 升序返回, 这里按最后更新时间倒序重排, 呼应原型"最近更新在前"的展示顺序
@@ -85,12 +96,13 @@ export default function Installed() {
 	}
 
 	const toggleEnabledMutation = useMutation({
-		mutationFn: (resource: Resource) => resourceSetEnabled(resource.id, !resource.enabled),
+		mutationFn: (resource: ResourceRespVO) =>
+			resourceSetEnabled(resource.id, !resource.enabled),
 		onSuccess: invalidateResourceQueries,
 	});
 
 	const deleteMutation = useMutation({
-		mutationFn: (resource: Resource) => resourceDelete(resource.id),
+		mutationFn: (resource: ResourceRespVO) => resourceDelete(resource.id),
 		onSuccess: (_result, resource) => {
 			invalidateResourceQueries();
 			if (selectedResourceId === resource.id) setSelectedResourceId(null);
@@ -112,20 +124,15 @@ export default function Installed() {
 
 	return (
 		<div className="flex h-full flex-col gap-4">
-			<header className="flex items-center justify-between">
-				<h1 className="text-2xl font-bold">已安装 / Installed</h1>
-				<Button variant="outline" onClick={() => resourcesQuery.refetch()}>
-					<RefreshCw
-						size={14}
-						className={resourcesQuery.isFetching ? 'animate-spin' : undefined}
-					/>
-					刷新
-				</Button>
-			</header>
+			<PageHeader
+				title="已安装 / Installed"
+				description="管理已安装的 Skill 与 MCP, 启用/禁用或同步到各 Agent"
+			/>
 
 			<div className="flex min-h-0 flex-1 gap-4">
 				<ResourceList
 					resources={resources}
+					isLoading={resourcesQuery.isLoading}
 					linkCountByResource={linkCountByResource}
 					selectedId={selectedResourceId}
 					typeFilter={typeFilter}

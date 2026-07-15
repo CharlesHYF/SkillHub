@@ -5,6 +5,7 @@
 //           "AUTH_REQUIRED:<provider>" 错误触发, 打开 AuthModal 完成认证后自动重试安装, 成功后
 //           提示已安装并可跳转已安装页
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -14,13 +15,16 @@ import {
 	marketDetail,
 	marketInstall,
 	parseAuthRequiredProvider,
-	type MarketResource,
+	type MarketResourceRespVO,
 } from '@/api/market';
-import type { AuthAccount } from '@/api/auth';
+import type { AuthAccountRespVO } from '@/api/auth';
 import { AuthModal } from '@/components/auth/auth-modal';
 import { INSTALL_PERMISSIONS } from '@/components/auth/auth-display';
 import {
+	formatCategory,
 	formatStars,
+	formatUpdatedAt,
+	formatVersion,
 	sourceTypeToCode,
 	toResourceKind,
 } from '@/components/marketplace/market-display';
@@ -28,7 +32,6 @@ import { TypeBadge } from '@/components/common/type-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { formatDateTime } from '@/lib/utils';
 
 const MARKET_DETAIL_KEY = 'market-detail';
 // 与 pages/marketplace.tsx 共享同一字面量, 安装成功后一并失效 Installed 页面的本地库列表查询
@@ -47,7 +50,7 @@ const INSTALL_STEPS = [
 ];
 
 /** 把 (sourceType 数值编码, extId) 编码为 /marketplace/:id 的单段路由参数: extId 本身可能含
- * "/" 与 ":"(如 "owner/repo:path", 见 api/market.ts MarketResource.extId 文档), 不能直接拼进
+ * "/" 与 ":"(如 "owner/repo:path", 见 api/market.ts MarketResourceRespVO.extId 文档), 不能直接拼进
  * 路径段, 整体 encodeURIComponent 后以 "<sourceType>:<encoded extId>" 拼接(sourceType 数值
  * 编码本身不含 ":", 解码时按第一个 ":" 切分即可还原, 不会与 extId 内部的 ":"/"/" 混淆)。
  * 未来"查看详情"入口应据此构造链接, 与 parseMarketDetailId 互为逆运算 */
@@ -112,7 +115,7 @@ export default function MarketplaceDetail() {
 	}, [parsedId?.sourceType, parsedId?.extId]);
 
 	const installMutation = useMutation({
-		mutationFn: (target: MarketResource) =>
+		mutationFn: (target: MarketResourceRespVO) =>
 			marketInstall(sourceTypeToCode(target.sourceType), target.extId),
 		onMutate: () => {
 			setInstalled(false);
@@ -137,7 +140,7 @@ export default function MarketplaceDetail() {
 	}
 
 	/** AuthModal 认证成功回调: 关闭弹窗并自动重试安装, 不需要用户再点一次"下载并安装" */
-	function handleAuthenticated(_account: AuthAccount) {
+	function handleAuthenticated(_account: AuthAccountRespVO) {
 		setAuthProvider(null);
 		if (resource) installMutation.mutate(resource);
 	}
@@ -155,11 +158,15 @@ export default function MarketplaceDetail() {
 			<h1 className="text-2xl font-bold">资源详情 / Install</h1>
 
 			{!parsedId ? (
-				<p className="text-sm text-muted-foreground">资源不存在 / Resource not found</p>
+				<p className="text-sm text-muted-foreground">
+					资源不存在 / ResourceRespVO not found
+				</p>
 			) : detailQuery.isLoading ? (
 				<p className="text-sm text-muted-foreground">加载中...</p>
 			) : !resource ? (
-				<p className="text-sm text-muted-foreground">资源不存在 / Resource not found</p>
+				<p className="text-sm text-muted-foreground">
+					资源不存在 / ResourceRespVO not found
+				</p>
 			) : (
 				<div className="grid grid-cols-3 gap-4">
 					<div className="col-span-2 flex flex-col gap-4">
@@ -175,7 +182,9 @@ export default function MarketplaceDetail() {
 									<h2 className="text-xl font-semibold text-foreground">
 										{resource.name}
 									</h2>
-									<Badge variant="outline">v{resource.version || '-'}</Badge>
+									<Badge variant="outline">
+										{formatVersion(resource.version)}
+									</Badge>
 									<TypeBadge type={toResourceKind(resource.resType)} />
 									<span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
 										<Star size={14} />
@@ -190,10 +199,10 @@ export default function MarketplaceDetail() {
 
 						<div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
 							<InfoRow label="发布者" value={resource.author} />
-							<InfoRow label="类别" value={resource.category || '-'} />
+							<InfoRow label="类别" value={formatCategory(resource.category)} />
 							<InfoRow label="大小" value={NOT_AVAILABLE} />
 							<InfoRow label="下载量" value={NOT_AVAILABLE} />
-							<InfoRow label="最新更新" value={formatDateTime(resource.updatedAt)} />
+							<InfoRow label="最新更新" value={formatUpdatedAt(resource.updatedAt)} />
 							<InfoRow label="兼容性" value={NOT_AVAILABLE} />
 						</div>
 
@@ -205,10 +214,10 @@ export default function MarketplaceDetail() {
 								<ul className="flex flex-col gap-2 text-sm">
 									<li className="flex items-center justify-between">
 										<span className="font-medium text-foreground">
-											v{resource.version || '-'}(当前)
+											{formatVersion(resource.version)}(当前)
 										</span>
 										<span className="text-muted-foreground">
-											{formatDateTime(resource.updatedAt)}
+											{formatUpdatedAt(resource.updatedAt)}
 										</span>
 									</li>
 								</ul>

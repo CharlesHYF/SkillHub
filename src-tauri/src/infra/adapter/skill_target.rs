@@ -1,8 +1,12 @@
-// 文件作用: Skill 落地策略 —— 描述各 AI 工具把"已装 Skill 清单"落在磁盘上的三种形态
+// 文件作用: Skill 落地策略 —— 描述各 AI 工具把"已装 Skill 清单"落在磁盘上的形态
 //           (SkillTarget), 并提供 read_skills 统一读出当前已装清单, 供各 AgentAdapter::
-//           read_state 组装 ActualState.skills。三种形态覆盖 Task 3/4 接入的 8 款工具,
+//           read_state 组装 ActualState.skills。前三种形态覆盖 Task 3/4 接入的 8 款工具,
 //           具体每款工具映射到哪种形态见 adapter::mod::json_mcp_agent_configs 与
-//           adapter::mod::all_adapters。
+//           adapter::mod::all_adapters。本任务(新增 CodeBuddy/WorkBuddy 适配器)追加第四种
+//           形态 None —— CodeBuddy 官方文档未提供任何本地 Skill/rules 目录约定, 用它占位
+//           "该工具结构上仍带 skill_target 字段, 但实际读写恒为空/no-op", 搭配
+//           JsonMcpAdapter::supports 据此把 Skill 能力如实汇报为 false(见该文件), 避免在用户
+//           磁盘上凭空捏造一个从未被验证过的目录/文件约定。
 //           InstructionsFile 变体依赖 SkillHub 自定义的标记块格式登记"这段内容是 SkillHub
 //           装的哪个 Skill":
 //               <!-- skillhub:start:<name>@<version> -->
@@ -13,6 +17,7 @@
 //           格式包裹注入内容(即 MARK_START_PREFIX/MARK_SUFFIX 两个常量拼出的样式), 否则本文件
 //           的读取逻辑会读不到。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -42,6 +47,11 @@ pub enum SkillTarget {
 	/// 单文件聚合家族(GeminiCli/Codex): 用单个指令文件(如 `GEMINI.md`/`AGENTS.md`)登记
 	/// SkillHub 已装的 Skill, 按文件头注释所述的标记块格式解析。字段为相对家目录的路径
 	InstructionsFile(PathBuf),
+	/// 空占位形态(CodeBuddy): 该工具官方文档未提供任何本地 Skill/rules 目录约定, 无处落地。
+	/// read_skills 恒返回空清单, write_skill/remove_skill 恒为 no-op(Ok(())), export_skill
+	/// 恒返回 `Ok(false)` —— 三者均不触碰磁盘, 不在用户机器上产生任何文件/目录(见文件头注释,
+	/// 严禁凭猜测捏造一个未核实的落地路径)
+	None,
 }
 
 impl SkillTarget {
@@ -54,6 +64,7 @@ impl SkillTarget {
 			SkillTarget::ClaudeSkillsDir(rel) => read_claude_skills_dir(&home.join(rel)),
 			SkillTarget::RulesDir { dir, ext } => read_rules_dir(&home.join(dir), ext),
 			SkillTarget::InstructionsFile(rel) => read_instructions_file(&home.join(rel)),
+			SkillTarget::None => Vec::new(),
 		}
 	}
 
@@ -81,6 +92,7 @@ impl SkillTarget {
 			SkillTarget::InstructionsFile(rel) => {
 				write_instructions_file(&home.join(rel), name, version, src_dir)
 			}
+			SkillTarget::None => Ok(()),
 		}
 	}
 
@@ -91,6 +103,39 @@ impl SkillTarget {
 			SkillTarget::ClaudeSkillsDir(rel) => remove_claude_skills_dir(&home.join(rel), name),
 			SkillTarget::RulesDir { dir, ext } => remove_rules_dir(&home.join(dir), ext, name),
 			SkillTarget::InstructionsFile(rel) => remove_instructions_file(&home.join(rel), name),
+			SkillTarget::None => Ok(()),
+		}
+	}
+
+	/// write_skill/remove_skill 的逆操作: 从 `home` 下按本变体描述的落地形态, 把 `name` 对应的
+	/// Skill 内容导出到 `dest_dir`, 统一整理为"含 SKILL.md 的目录"这一种形态(与 data_dir/skills/
+	/// <name>/ 的既有落盘惯例一致, 见 services::library::import_skill/services::market::
+	/// write_skill_files), 供 M6 Task BE-2(services::agent_import, 从已检测 Agent 反向导入已装
+	/// Skill 到本地库)复用 —— read_skills 只还原出 SkillRef{name,version} 这两个元数据字段,
+	/// 不足以取到真正可落地的内容, 必须靠本方法按落地形态回到磁盘上取原始内容:
+	/// - ClaudeSkillsDir: `home/<rel>/<name>/` 本就是一个完整目录(可能含 SKILL.md 之外的其它
+	///   文件/子目录), 整树复制到 dest_dir(复用 copy_dir_recursive); 目标已存在(重复导入)先
+	///   整体清空再复制, 不做增量合并, 与 write_claude_skills_dir 的覆盖式更新惯例一致。
+	/// - RulesDir: `home/<dir>/<name>.<ext>` 本就是单文件(其内容即当初 write_rules_dir 写入的
+	///   SKILL.md 全文, 见该函数文档), 原样写为 dest_dir/SKILL.md。
+	/// - InstructionsFile: 从 `home/<rel>` 全文里按 name 定位配对的标记块(复用
+	///   find_marked_block_range), 取块内文本(不含首尾标签行)写为 dest_dir/SKILL.md。
+	///
+	/// 三种形态在目标内容不存在(目录/文件/标记块缺失, 或含残缺块)时都返回 `Ok(false)`
+	/// (不算错误, 调用方应视为"没有可导出的内容"静默跳过, 呼应本文件一贯"缺失不是错误"的宽松
+	/// 风格); 成功导出返回 `Ok(true)`
+	pub fn export_skill(&self, home: &Path, name: &str, dest_dir: &Path) -> Result<bool> {
+		match self {
+			SkillTarget::ClaudeSkillsDir(rel) => {
+				export_claude_skills_dir(&home.join(rel), name, dest_dir)
+			}
+			SkillTarget::RulesDir { dir, ext } => {
+				export_rules_dir(&home.join(dir), ext, name, dest_dir)
+			}
+			SkillTarget::InstructionsFile(rel) => {
+				export_instructions_file(&home.join(rel), name, dest_dir)
+			}
+			SkillTarget::None => Ok(false),
 		}
 	}
 }
@@ -179,6 +224,28 @@ fn remove_claude_skills_dir(root: &Path, name: &str) -> Result<()> {
 	Ok(())
 }
 
+/// ClaudeSkillsDir 形态的 export(write_claude_skills_dir 的逆操作): 若 `root/<name>/` 不是
+/// 目录(未安装该 Skill/名称不存在)返回 `Ok(false)`; 否则把该目录整树复制到 `dest_dir`
+/// (目标已存在先整体清空, 覆盖式更新, 与 write_claude_skills_dir 惯例一致), 返回 `Ok(true)`
+fn export_claude_skills_dir(root: &Path, name: &str, dest_dir: &Path) -> Result<bool> {
+	let src = root.join(name);
+	if !src.is_dir() {
+		return Ok(false);
+	}
+	if dest_dir.exists() {
+		fs::remove_dir_all(dest_dir)
+			.with_context(|| format!("清理旧导出目录失败: {}", dest_dir.display()))?;
+	}
+	copy_dir_recursive(&src, dest_dir).with_context(|| {
+		format!(
+			"导出 Skill 内容失败: {} -> {}",
+			src.display(),
+			dest_dir.display()
+		)
+	})?;
+	Ok(true)
+}
+
 /// 把 `src` 目录树逐层递归复制到 `dst`(`dst` 不存在会先创建); 只处理普通文件与子目录,
 /// 符号链接等特殊类型目前场景(Skill 源目录)不涉及, 按需可后续扩展。
 /// 可见性 pub(crate): 供 services::library::import_local(Task 8)复用同一份"整树复制"逻辑,
@@ -223,6 +290,39 @@ fn remove_rules_dir(dir: &Path, ext: &str, name: &str) -> Result<()> {
 	backup_file(&target).with_context(|| format!("备份文件失败: {}", target.display()))?;
 	fs::remove_file(&target).with_context(|| format!("删除文件失败: {}", target.display()))?;
 	Ok(())
+}
+
+/// RulesDir 形态的 export(write_rules_dir 的逆操作): 若 `dir/<name>.<ext>` 不是文件(未安装该
+/// Skill/名称不存在)返回 `Ok(false)`; 否则把其全文原样写为 `dest_dir/SKILL.md`(该形态本就是
+/// write_rules_dir 直接落地的 SKILL.md 全文, 见其文档, 此处是逆操作原样取回), 返回 `Ok(true)`
+fn export_rules_dir(dir: &Path, ext: &str, name: &str, dest_dir: &Path) -> Result<bool> {
+	let src = dir.join(format!("{name}.{ext}"));
+	let Ok(content) = fs::read_to_string(&src) else {
+		return Ok(false);
+	};
+	fs::create_dir_all(dest_dir)
+		.with_context(|| format!("创建目录失败: {}", dest_dir.display()))?;
+	fs::write(dest_dir.join("SKILL.md"), content)
+		.with_context(|| format!("写入文件失败: {}", dest_dir.join("SKILL.md").display()))?;
+	Ok(true)
+}
+
+/// InstructionsFile 形态的 export(write_instructions_file 的逆操作): 从 `path` 全文里按 name
+/// 定位配对的标记块(复用 find_marked_block_range/extract_marked_block_content); 文件不存在、
+/// 或该 name 的块不存在(含残缺块)都返回 `Ok(false)`; 找到则把块内文本(不含首尾标签行)写为
+/// `dest_dir/SKILL.md`, 返回 `Ok(true)`
+fn export_instructions_file(path: &Path, name: &str, dest_dir: &Path) -> Result<bool> {
+	let Ok(text) = fs::read_to_string(path) else {
+		return Ok(false);
+	};
+	let Some(content) = extract_marked_block_content(&text, name) else {
+		return Ok(false);
+	};
+	fs::create_dir_all(dest_dir)
+		.with_context(|| format!("创建目录失败: {}", dest_dir.display()))?;
+	fs::write(dest_dir.join("SKILL.md"), content)
+		.with_context(|| format!("写入文件失败: {}", dest_dir.join("SKILL.md").display()))?;
+	Ok(true)
 }
 
 /// InstructionsFile 形态的 write: 目标聚合文件写前先 backup, 按文件头注释所述的标记块格式
@@ -363,6 +463,16 @@ fn find_marked_block_range(lines: &[&str], name: &str) -> Option<(usize, usize)>
 		}
 	}
 	None
+}
+
+/// 在 `text` 里取出 `name` 对应完整标记块的块内文本(不含首尾标签行本身), 供 export_instructions_
+/// file 还原可落地的 Skill 内容(与 parse_marked_skills/find_marked_block_range 同一套"起止标签
+/// 配对"扫描规则, 只是这里要的是内容而非 name/version 元数据); 该 name 的块不存在(含残缺块)
+/// 都返回 None
+fn extract_marked_block_content(text: &str, name: &str) -> Option<String> {
+	let lines: Vec<&str> = text.lines().collect();
+	let (start, end) = find_marked_block_range(&lines, name)?;
+	Some(lines[start + 1..end].join("\n"))
 }
 
 /// 在 `text` 里 upsert(更新或插入) `name` 对应的标记块: 已存在该 name 的完整块(起止标签
@@ -878,5 +988,211 @@ mod tests {
 		assert!(missing_target
 			.remove_skill(dir.path(), "demo-skill")
 			.is_ok());
+	}
+
+	// ---------- export_skill(M6 Task BE-2: 从已检测 Agent 反向导入已装 Skill 到本地库所需的
+	// "读回可落地内容", 与 read_skills 只还原 name/version 元数据不同) ----------
+
+	// ClaudeSkillsDir::export_skill: 应把已装 Skill 的整个子目录(含 SKILL.md 与其它子文件)
+	// 原样复制到 dest_dir; 名称不存在(未装该 Skill)应返回 Ok(false), 不报错、不创建 dest_dir
+	#[test]
+	fn claude_skills_dir_export_skill_copies_tree_and_reports_false_when_missing() {
+		let dir = tempdir().unwrap();
+		let target = SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills"));
+		let src_dir = make_src_dir(dir.path(), "---\nversion: 1.0.0\n---\n正文\n");
+		target
+			.write_skill(dir.path(), "demo-skill", "1.0.0", &src_dir)
+			.unwrap();
+
+		let dest = dir.path().join("exported/demo-skill");
+		let ok = target
+			.export_skill(dir.path(), "demo-skill", &dest)
+			.unwrap();
+		assert!(ok);
+		assert_eq!(
+			fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+			"---\nversion: 1.0.0\n---\n正文\n"
+		);
+		assert_eq!(
+			fs::read_to_string(dest.join("scripts/run.sh")).unwrap(),
+			"#!/bin/sh\necho hi\n"
+		);
+
+		let missing_dest = dir.path().join("exported/does-not-exist");
+		let missing_ok = target
+			.export_skill(dir.path(), "no-such-skill", &missing_dest)
+			.unwrap();
+		assert!(!missing_ok, "未装的 Skill 应返回 Ok(false)");
+		assert!(!missing_dest.exists(), "不应创建 dest_dir");
+	}
+
+	// ClaudeSkillsDir::export_skill: dest_dir 已存在残留旧文件时应整体清空再复制(覆盖式更新,
+	// 与 write_claude_skills_dir 惯例一致), 不与旧内容混杂
+	#[test]
+	fn claude_skills_dir_export_skill_overwrites_existing_dest_dir() {
+		let dir = tempdir().unwrap();
+		let target = SkillTarget::ClaudeSkillsDir(PathBuf::from(".claude/skills"));
+		let src_dir = make_src_dir(dir.path(), "---\nversion: 1.0.0\n---\n正文\n");
+		target
+			.write_skill(dir.path(), "demo-skill", "1.0.0", &src_dir)
+			.unwrap();
+
+		let dest = dir.path().join("exported/demo-skill");
+		fs::create_dir_all(&dest).unwrap();
+		fs::write(dest.join("stale.txt"), "旧导出残留").unwrap();
+
+		target
+			.export_skill(dir.path(), "demo-skill", &dest)
+			.unwrap();
+
+		assert!(!dest.join("stale.txt").exists(), "旧残留文件应被清空");
+		assert!(dest.join("SKILL.md").exists());
+	}
+
+	// RulesDir::export_skill: 应把 dir/<name>.<ext> 全文原样写为 dest_dir/SKILL.md; 名称不存在
+	// 应返回 Ok(false), 不创建 dest_dir
+	#[test]
+	fn rules_dir_export_skill_writes_content_as_skill_md_and_reports_false_when_missing() {
+		let dir = tempdir().unwrap();
+		let rules_dir = dir.path().join(".cursor/rules");
+		fs::create_dir_all(&rules_dir).unwrap();
+		fs::write(rules_dir.join("demo-skill.mdc"), "# 规则正文\n内容").unwrap();
+
+		let target = SkillTarget::RulesDir {
+			dir: PathBuf::from(".cursor/rules"),
+			ext: "mdc".to_string(),
+		};
+		let dest = dir.path().join("exported/demo-skill");
+		let ok = target
+			.export_skill(dir.path(), "demo-skill", &dest)
+			.unwrap();
+		assert!(ok);
+		assert_eq!(
+			fs::read_to_string(dest.join("SKILL.md")).unwrap(),
+			"# 规则正文\n内容"
+		);
+
+		let missing_dest = dir.path().join("exported/no-such-skill");
+		let missing_ok = target
+			.export_skill(dir.path(), "no-such-skill", &missing_dest)
+			.unwrap();
+		assert!(!missing_ok);
+		assert!(!missing_dest.exists());
+	}
+
+	// InstructionsFile::export_skill: 应从标记块里取出块内文本(不含首尾标签行)写为
+	// dest_dir/SKILL.md, 其它 skill 的块与手写内容不应混入; 名称不存在应返回 Ok(false)
+	#[test]
+	fn instructions_file_export_skill_extracts_block_content_and_reports_false_when_missing() {
+		let dir = tempdir().unwrap();
+		let path = dir.path().join("AGENTS.md");
+		fs::write(
+			&path,
+			"# 手写内容\n\n\
+			<!-- skillhub:start:demo-skill@1.0.0 -->\ndemo-skill 的正文\n第二行\n<!-- skillhub:end:demo-skill -->\n\n\
+			<!-- skillhub:start:other-skill@1.0.0 -->\nother 内容\n<!-- skillhub:end:other-skill -->\n",
+		)
+		.unwrap();
+
+		let target = SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md"));
+		let dest = dir.path().join("exported/demo-skill");
+		let ok = target
+			.export_skill(dir.path(), "demo-skill", &dest)
+			.unwrap();
+		assert!(ok);
+		let content = fs::read_to_string(dest.join("SKILL.md")).unwrap();
+		assert_eq!(content, "demo-skill 的正文\n第二行");
+		assert!(!content.contains("other 内容"), "不应混入其它 skill 的块");
+		assert!(!content.contains("skillhub:start"), "不应含标签行本身");
+
+		let missing_dest = dir.path().join("exported/no-such-skill");
+		let missing_ok = target
+			.export_skill(dir.path(), "no-such-skill", &missing_dest)
+			.unwrap();
+		assert!(!missing_ok);
+		assert!(!missing_dest.exists());
+	}
+
+	// InstructionsFile::export_skill: 文件不存在、或只有起始标签没有匹配结束标签的残缺块,
+	// 都应返回 Ok(false), 不报错也不误把残缺内容导出
+	#[test]
+	fn instructions_file_export_skill_reports_false_for_missing_file_and_broken_block() {
+		let dir = tempdir().unwrap();
+		let target = SkillTarget::InstructionsFile(PathBuf::from("MISSING.md"));
+		assert!(!target
+			.export_skill(dir.path(), "demo-skill", &dir.path().join("out1"))
+			.unwrap());
+
+		let broken_path = dir.path().join("AGENTS.md");
+		fs::write(
+			&broken_path,
+			"<!-- skillhub:start:broken@1.0.0 -->\n内容写到一半没收尾\n",
+		)
+		.unwrap();
+		let broken_target = SkillTarget::InstructionsFile(PathBuf::from("AGENTS.md"));
+		assert!(!broken_target
+			.export_skill(dir.path(), "broken", &dir.path().join("out2"))
+			.unwrap());
+	}
+
+	// ---------- None(本任务新增: CodeBuddy 纯 MCP, 无本地 Skill 落地形态占位) ----------
+
+	// None::read_skills: 无论 home 下实际有什么文件/目录, 都应恒返回空清单(该形态压根不看磁盘)
+	#[test]
+	fn none_read_skills_always_returns_empty_regardless_of_home_contents() {
+		let dir = tempdir().unwrap();
+		// 即便 home 下凑巧存在同名的 ClaudeSkillsDir 形态目录, None 也不应读到它
+		let skill_dir = dir.path().join(".claude/skills/demo-skill");
+		fs::create_dir_all(&skill_dir).unwrap();
+		fs::write(skill_dir.join("SKILL.md"), "---\nversion: 1.0.0\n---\n").unwrap();
+
+		let target = SkillTarget::None;
+		assert!(target.read_skills(dir.path()).is_empty());
+	}
+
+	// None::write_skill: 应恒返回 Ok(()), 且不在 home 下创建任何新文件/目录(真正的 no-op,
+	// 不允许在用户磁盘留下垃圾)
+	#[test]
+	fn none_write_skill_is_noop_and_creates_nothing_on_disk() {
+		let dir = tempdir().unwrap();
+		let src_dir = make_src_dir(dir.path(), "---\nversion: 1.0.0\n---\n正文\n");
+
+		let entries_before: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+
+		let target = SkillTarget::None;
+		target
+			.write_skill(dir.path(), "demo-skill", "1.0.0", &src_dir)
+			.unwrap();
+
+		let entries_after: Vec<_> = fs::read_dir(dir.path()).unwrap().collect();
+		assert_eq!(
+			entries_before.len(),
+			entries_after.len(),
+			"write_skill 不应在 home 下新增任何文件/目录"
+		);
+	}
+
+	// None::remove_skill: 应恒返回 Ok(()), 与其它形态"不存在即已达成目的"的宽松风格一致
+	#[test]
+	fn none_remove_skill_is_always_ok_noop() {
+		let dir = tempdir().unwrap();
+		let target = SkillTarget::None;
+		assert!(target.remove_skill(dir.path(), "demo-skill").is_ok());
+	}
+
+	// None::export_skill: 应恒返回 Ok(false), 且不创建 dest_dir(与其它形态"目标不存在"的
+	// 语义一致, 供 JsonMcpAdapter::supports 依据该形态把 Skill 能力如实汇报为 false)
+	#[test]
+	fn none_export_skill_always_reports_false_and_creates_no_dest_dir() {
+		let dir = tempdir().unwrap();
+		let target = SkillTarget::None;
+		let dest = dir.path().join("exported/demo-skill");
+
+		let ok = target
+			.export_skill(dir.path(), "demo-skill", &dest)
+			.unwrap();
+
+		assert!(!ok);
+		assert!(!dest.exists(), "不应创建 dest_dir");
 	}
 }

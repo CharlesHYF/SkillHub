@@ -1,5 +1,6 @@
 // 文件作用: 全局 UI 态 store 单测(选中态/筛选态的读写与复位)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useUiStore } from './ui';
 
@@ -15,6 +16,7 @@ describe('useUiStore', () => {
 		expect(state.typeFilter).toBeUndefined();
 		expect(state.keyword).toBe('');
 		expect(state.selectedMarket).toBeNull();
+		expect(state.marketRefreshed).toBe(false);
 	});
 
 	it('setSelectedResourceId 应更新选中资源 id', () => {
@@ -58,5 +60,13 @@ describe('useUiStore', () => {
 		useUiStore.getState().setSelectedMarket({ sourceType: 1, extId: 'demo/skill' });
 		useUiStore.getState().setSelectedMarket(null);
 		expect(useUiStore.getState().selectedMarket).toBeNull();
+	});
+
+	it('setMarketRefreshed 应把市场刷新态置为 true, reset 应还原为 false', () => {
+		useUiStore.getState().setMarketRefreshed();
+		expect(useUiStore.getState().marketRefreshed).toBe(true);
+
+		useUiStore.getState().reset();
+		expect(useUiStore.getState().marketRefreshed).toBe(false);
 	});
 });

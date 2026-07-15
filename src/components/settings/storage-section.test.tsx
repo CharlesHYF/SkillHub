@@ -1,12 +1,13 @@
 // 文件作用: StorageSection 组件单测(输入回调、浏览按钮可点击并调用回调)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { Settings } from '@/api/setting';
+import type { SettingRespVO } from '@/api/setting';
 import { StorageSection } from './storage-section';
 
-const baseSettings: Pick<Settings, 'storageSkillDir' | 'storageMcpDir'> = {
+const baseSettings: Pick<SettingRespVO, 'storageSkillDir' | 'storageMcpDir'> = {
 	storageSkillDir: '',
 	storageMcpDir: '',
 };

@@ -1,9 +1,10 @@
 // 文件作用: DiffDetailPanel 渲染与交互单测(空态/条目渲染/Tab 过滤计数)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { DiffItem, DiffPlan } from '@/api/sync';
+import type { DiffItem, DiffPlanRespVO } from '@/api/sync';
 import { DiffDetailPanel } from './diff-detail-panel';
 
 function makeItem(overrides: Partial<DiffItem> = {}): DiffItem {
@@ -30,7 +31,7 @@ describe('DiffDetailPanel', () => {
 	});
 
 	it('应渲染每条差异(类型徽标/名称/本地版本/Agent 版本), 版本缺失兜底为"—"', () => {
-		const plan: DiffPlan = {
+		const plan: DiffPlanRespVO = {
 			items: [
 				makeItem({
 					resType: 'Skill',
@@ -63,7 +64,7 @@ describe('DiffDetailPanel', () => {
 
 	it('Tab 计数应正确, 切换 Tab 应按 action 过滤条目', async () => {
 		const user = userEvent.setup();
-		const plan: DiffPlan = {
+		const plan: DiffPlanRespVO = {
 			items: [
 				makeItem({ name: 'add-1', action: 'Add' }),
 				makeItem({ name: 'add-2', action: 'Add' }),

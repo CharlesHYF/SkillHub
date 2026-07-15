@@ -1,12 +1,13 @@
 // 文件作用: MarketCard 渲染与交互单测(字段展示/类型徽标/选中态/查看详情与下载回调/安装错误提示)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { MarketResource } from '@/api/market';
+import type { MarketResourceRespVO } from '@/api/market';
 import { MarketCard } from './market-card';
 
-function makeMarketResource(overrides: Partial<MarketResource> = {}): MarketResource {
+function makeMarketResource(overrides: Partial<MarketResourceRespVO> = {}): MarketResourceRespVO {
 	return {
 		sourceType: 'GithubSkills',
 		resType: 'Skill',
@@ -91,6 +92,21 @@ describe('MarketCard', () => {
 		expect(onSelect).not.toHaveBeenCalled();
 	});
 
+	// 卡片根元素是 <div>(非原生可点元素)但绑了 onClick(打开详情), 必须带 cursor-pointer,
+	// 否则真实浏览器里鼠标悬停不会显示手型指针(实机反馈同类问题的回归锁定)
+	it('卡片根元素应带 cursor-pointer', () => {
+		render(<MarketCard {...baseProps} resource={makeMarketResource()} />);
+		expect(screen.getByText('data-visualizer').closest('.cursor-pointer')).not.toBeNull();
+	});
+
+	// 卡片根元素是两列 grid 的 grid item, 必须带 min-w-0, 否则较长的名称/描述会把 grid item
+	// 撑宽到超过所在列宽(grid item 默认 min-width:auto), 挤压甚至溢出两列网格(见
+	// market-list.tsx 卡片网格改回稳定两列后的对应注释)
+	it('卡片根元素应带 min-w-0 防止两列网格下溢出', () => {
+		render(<MarketCard {...baseProps} resource={makeMarketResource()} />);
+		expect(screen.getByText('data-visualizer').closest('.min-w-0')).not.toBeNull();
+	});
+
 	it('selected 为真时卡片应带 data-state=selected', () => {
 		const resource = makeMarketResource();
 		render(<MarketCard {...baseProps} resource={resource} selected />);
@@ -98,6 +114,12 @@ describe('MarketCard', () => {
 			'data-state',
 			'selected',
 		);
+	});
+
+	it('version 为空字符串时应展示占位符 "—", 不展示裸 "v-"', () => {
+		render(<MarketCard {...baseProps} resource={makeMarketResource({ version: '' })} />);
+		expect(screen.queryByText('v-')).not.toBeInTheDocument();
+		expect(screen.getByText('—')).toBeInTheDocument();
 	});
 
 	it('installError 非空时应展示该错误文案', () => {

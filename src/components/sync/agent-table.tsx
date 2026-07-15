@@ -3,12 +3,15 @@
 //           待同步/最后同步时间/操作); 纯展示 + 回调, 数据获取/mutation/进度事件由
 //           pages/sync-center 统一持有, 与 components/installed/resource-list 的分层方式一致
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { useState } from 'react';
 import { Eye, Monitor, MoreVertical, RefreshCw, RotateCcw, SquareCheck, Zap } from 'lucide-react';
 
-import type { AgentRow } from '@/api/agent';
-import type { SyncSummary } from '@/api/sync';
+import type { AgentRespVO } from '@/api/agent';
+import type { SyncSummaryRespVO } from '@/api/sync';
 import { DataTable, type DataTableColumn } from '@/components/common/data-table';
+import { EmptyState } from '@/components/common/empty-state';
+import { SkeletonTable } from '@/components/common/skeleton';
 import { SyncStatusBadge } from '@/components/common/sync-status-badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -22,16 +25,18 @@ import { formatRelativeTime } from '@/lib/utils';
 import { agentInstallKind, deriveAgentSyncStatus, isAgentSyncable } from './agent-display';
 
 interface AgentTableProps {
-	agents: AgentRow[];
+	agents: AgentRespVO[];
 	/** agent.id -> 待同步条目数(来自该 Agent 的 sync_diff 结果); undefined 表示尚未加载/加载失败 */
 	pendingCountByAgentId: Map<number, number | undefined>;
 	/** agent.id -> 期望关联(desired=1)给该 Agent 的 Skill/MCP 数, 由 pages/sync-center 从
 	 * resourceAgentLinks + libraryList 聚合而来 */
 	installedCountByAgentId: Map<number, { skill: number; mcp: number }>;
 	/** agent.id -> 本次会话内最近一次单独同步该 Agent 的结果(见 agent-display.deriveAgentSyncStatus) */
-	lastOutcomeByAgentId: Map<number, SyncSummary>;
+	lastOutcomeByAgentId: Map<number, SyncSummaryRespVO>;
 	selectedId: number | null;
-	onSelectAgent: (agent: AgentRow) => void;
+	/** Agent 列表首次加载中: 为真时表格区展示骨架屏而非空态, 避免探测完成前误判为"暂无 Agent" */
+	isLoading?: boolean;
+	onSelectAgent: (agent: AgentRespVO) => void;
 	/** 触发对给定 Agent id 列表的同步(供工具条批量按钮与行内"立即同步"复用同一入口) */
 	onSyncAgentIds: (agentIds: number[]) => void;
 	/** 是否有同步正在进行(禁用会触发新同步的按钮, 避免重叠调用) */
@@ -39,7 +44,7 @@ interface AgentTableProps {
 }
 
 /** 表内 Agent 的可同步 id 列表(在线 + 本地类型, 见 agent-display.isAgentSyncable) */
-function syncableIds(agents: AgentRow[]): number[] {
+function syncableIds(agents: AgentRespVO[]): number[] {
 	return agents.filter(isAgentSyncable).map((agent) => agent.id);
 }
 
@@ -51,6 +56,7 @@ export function AgentTable({
 	installedCountByAgentId,
 	lastOutcomeByAgentId,
 	selectedId,
+	isLoading = false,
 	onSelectAgent,
 	onSyncAgentIds,
 	isSyncing = false,
@@ -80,7 +86,7 @@ export function AgentTable({
 		setCheckedIds(checked ? new Set(agents.map((agent) => agent.id)) : new Set());
 	}
 
-	const columns: DataTableColumn<AgentRow>[] = [
+	const columns: DataTableColumn<AgentRespVO>[] = [
 		{
 			key: 'checkbox',
 			header: (
@@ -248,10 +254,16 @@ export function AgentTable({
 			</div>
 
 			<div className="min-h-0 overflow-auto rounded-lg border">
-				{agents.length === 0 ? (
-					<p className="py-6 text-center text-sm text-muted-foreground">
-						暂无已连接 Agent
-					</p>
+				{isLoading ? (
+					<SkeletonTable rows={4} columns={6} />
+				) : agents.length === 0 ? (
+					<EmptyState
+						icon={Monitor}
+						title="暂无已连接 Agent"
+						description="启动时会自动探测本机 Claude Code / Cursor 等 Agent, 探测到后将在此列出"
+						autoRefresh
+						size="sm"
+					/>
 				) : (
 					<DataTable
 						columns={columns}

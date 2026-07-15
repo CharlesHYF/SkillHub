@@ -3,6 +3,7 @@
 //           元素上(而非丢失/停留在 null); 修复前 Button 是普通函数组件, 传入的 ref 会被 React
 //           丢弃并在控制台告警
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';

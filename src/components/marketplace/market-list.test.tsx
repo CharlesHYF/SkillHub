@@ -1,12 +1,13 @@
 // 文件作用: MarketList 渲染与交互单测(搜索/分段/筛选 chips/分类/排序/卡片网格/分页)
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { MarketResource } from '@/api/market';
+import type { MarketResourceRespVO } from '@/api/market';
 import { MarketList } from './market-list';
 
-function makeMarketResource(overrides: Partial<MarketResource> = {}): MarketResource {
+function makeMarketResource(overrides: Partial<MarketResourceRespVO> = {}): MarketResourceRespVO {
 	const name = overrides.name ?? 'demo-skill';
 	return {
 		sourceType: 'GithubSkills',
@@ -202,5 +203,26 @@ describe('MarketList', () => {
 	it('无匹配项时应展示占位文案', () => {
 		render(<MarketList {...baseProps} items={[]} total={0} />);
 		expect(screen.getByText('暂无匹配的资源')).toBeInTheDocument();
+	});
+
+	it('isLoading 为真时应展示骨架屏加载态, 不展示"暂无匹配的资源"空态', () => {
+		render(<MarketList {...baseProps} items={[]} total={0} isLoading />);
+		expect(screen.getByRole('status', { name: '加载中' })).toBeInTheDocument();
+		expect(screen.queryByText('暂无匹配的资源')).not.toBeInTheDocument();
+	});
+
+	// 还原原型第 2 屏"稳定两列", 不再用 auto-fill+minmax 按可用宽度自动铺出很多窄列(实机宽屏
+	// 反馈的具体症状); 仅在详情面板展开挤占大半宽度、逼近应用最小宽 1024 时才用容器查询优雅降级
+	// 单列(见 market-list.tsx 顶部对应注释), jsdom 不跑真实布局/容器查询, 这里只锁定类名不回归
+	it('卡片网格默认应为稳定两列(grid-cols-2), 并声明窄容器降级单列的类名(容器查询)', () => {
+		const items = [
+			makeMarketResource({ name: 'data-visualizer' }),
+			makeMarketResource({ name: 'web-scraper' }),
+		];
+		render(<MarketList {...baseProps} items={items} />);
+
+		const grid = screen.getByText('data-visualizer').closest('.grid-cols-2');
+		expect(grid).not.toBeNull();
+		expect(grid?.className).toMatch(/@max-\[500px\]:grid-cols-1/);
 	});
 });

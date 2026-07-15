@@ -2,6 +2,7 @@
 //           pickSaveFile/pickOpenFile/pickDirectory 各自以正确参数调用 save/open, 且用户取消
 //           (返回 null)与选中(返回路径字符串)两种情形均正确透传
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@tauri-apps/plugin-dialog', () => ({

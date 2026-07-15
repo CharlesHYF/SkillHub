@@ -2,10 +2,11 @@
 //           映射、导出范围/目标格式/导入冲突策略的可选项文案(措辞与原型截图第 6 屏一致), 供
 //           export-panel/import-panel/impexp-history-table 共用, 避免同一套映射写多份
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { Upload, Download, type LucideIcon } from 'lucide-react';
 import type { SyncStatus } from '@/components/common/sync-status-badge';
 
-/** 历史记录状态码(ImpexpRow.status: 0 失败/1 成功/2 部分成功) -> SyncStatusBadge 可渲染的状态文案,
+/** 历史记录状态码(ImpexpRespVO.status: 0 失败/1 成功/2 部分成功) -> SyncStatusBadge 可渲染的状态文案,
  * 复用 sync-status-badge 既有的语义色映射(见该文件文档注释), 不重复实现一套徽标 */
 export const IMPEXP_STATUS_LABEL: Record<0 | 1 | 2, SyncStatus> = {
 	0: '失败',
@@ -13,7 +14,7 @@ export const IMPEXP_STATUS_LABEL: Record<0 | 1 | 2, SyncStatus> = {
 	2: '部分成功',
 };
 
-/** 历史记录方向码(ImpexpRow.direction: 0 导出/1 导入) -> 展示文案 */
+/** 历史记录方向码(ImpexpRespVO.direction: 0 导出/1 导入) -> 展示文案 */
 export const DIRECTION_LABEL: Record<0 | 1, string> = {
 	0: '导出',
 	1: '导入',

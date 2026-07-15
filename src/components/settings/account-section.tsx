@@ -5,6 +5,7 @@
 //           export-panel/import-panel 同一惯例), 复用 src/api/auth.ts 既有封装, 不新造认证
 //           相关 command
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { useState } from 'react';
 import {
 	AppWindow,
@@ -17,7 +18,7 @@ import {
 	type LucideIcon,
 } from 'lucide-react';
 
-import type { AuthAccount, ProviderKind } from '@/api/auth';
+import type { AuthAccountRespVO, ProviderKind } from '@/api/auth';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -32,7 +33,7 @@ const OAUTH_PROVIDERS: { num: number; key: ProviderKind; label: string; icon: Lu
 ];
 
 interface AccountSectionProps {
-	accounts: AuthAccount[];
+	accounts: AuthAccountRespVO[];
 	/** 当前正在处理登录/退出/令牌提交的 provider 数值编码, 用于禁用对应行按钮并提示进行中;
 	 * 无操作进行时为 null */
 	pendingProvider: number | null;
@@ -92,18 +93,20 @@ export function AccountSection({
 								className="flex flex-col gap-2 rounded-md border p-3"
 							>
 								<div className="flex items-center justify-between gap-3">
-									<span className="flex items-center gap-2.5 text-sm">
-										<provider.icon size={16} />
-										<span className="flex flex-col">
+									<span className="flex min-w-0 items-center gap-2.5 text-sm">
+										<provider.icon size={16} className="shrink-0" />
+										<span className="flex min-w-0 flex-col">
 											<span className="font-medium text-foreground">
 												{provider.label}
 											</span>
-											<span className="text-xs text-muted-foreground">
+											{/* 已连接账号(邮箱等)长度不受控, truncate 兜底避免撑宽
+											    整行(实机窄窗反馈: 双列 grid 里的卡片需在窄宽降级) */}
+											<span className="truncate text-xs text-muted-foreground">
 												{account ? `已连接: ${account.account}` : '未连接'}
 											</span>
 										</span>
 									</span>
-									<div className="flex items-center gap-2">
+									<div className="flex shrink-0 items-center gap-2">
 										{account ? (
 											<>
 												<Button

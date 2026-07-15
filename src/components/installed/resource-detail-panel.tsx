@@ -1,9 +1,10 @@
 // 文件作用: 已安装界面右侧详情面板 —— 选中资源的完整信息 + 关联 Agent + 底部动作;
 //           纯展示 + 回调, 数据获取/选中态/mutation 由 pages/installed 统一持有
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { Copy, Sparkles, Plug } from 'lucide-react';
 
-import type { Resource } from '@/api/library';
+import type { ResourceRespVO } from '@/api/library';
 import { DetailPanel } from '@/components/common/detail-panel';
 import { TypeBadge } from '@/components/common/type-badge';
 import { Badge } from '@/components/ui/badge';
@@ -12,13 +13,13 @@ import { formatDateTime, formatRelativeTime } from '@/lib/utils';
 import { SOURCE_LABEL, deriveDescription, toResourceKind } from './resource-display';
 
 interface ResourceDetailPanelProps {
-	resource: Resource;
+	resource: ResourceRespVO;
 	/** 该资源当前已关联(desired=1)的 Agent 展示名列表, 由 pages/installed 从
 	 * resourceAgentLinks 按 resourceId 过滤而来 */
 	linkedAgentNames: string[];
 	onClose: () => void;
 	onSyncToAllAgents: () => void;
-	onRequestDelete: (resource: Resource) => void;
+	onRequestDelete: (resource: ResourceRespVO) => void;
 	/** 是否正在执行"同步到全部 Agent"(禁用按钮 + 文案提示, 避免重复触发) */
 	isSyncing?: boolean;
 }

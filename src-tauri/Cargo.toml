@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "SkillHub - 统一管理并同步本机 AI 工具的 Skill 与 MCP"
 authors = ["Charles"]
 edition = "2021"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -51,6 +52,9 @@ futures = "0.3"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 tar = "0.4"
 flate2 = "1"
+# serde_yaml_ng: 解析/写回 Hermes 的 ~/.hermes/config.yaml(YAML); 原 serde_yaml(dtolnay)已
+# 归档弃用, 改用维护活跃的社区 fork serde_yaml_ng, API 与原版兼容(infra::adapter::hermes)
+serde_yaml_ng = "0.10"
 
 [dev-dependencies]
 tempfile = "3"

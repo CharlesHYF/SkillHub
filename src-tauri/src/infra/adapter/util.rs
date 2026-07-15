@@ -4,6 +4,7 @@
 //           避免两个适配器各写一份相同的"按 action 调 SkillTarget::write_skill/remove_skill
 //           并包装 ItemOutcome"逻辑, 与 skill_target.rs 把 Skill 读取逻辑集中一处的思路一致)。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::fs;
 use std::path::{Path, PathBuf};

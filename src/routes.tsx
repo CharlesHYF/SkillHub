@@ -1,5 +1,6 @@
 // 文件作用: 路由表(7 条: 6 导航路由 + marketplace 详情子路由)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import type { RouteObject } from 'react-router-dom';
 import { AppShell } from './components/layout/app-shell';
 import Dashboard from './pages/dashboard';
@@ -8,7 +9,7 @@ import MarketplaceDetail from './pages/marketplace-detail';
 import Installed from './pages/installed';
 import SyncCenter from './pages/sync-center';
 import Portability from './pages/portability';
-import Settings from './pages/settings';
+import SettingRespVO from './pages/settings';
 
 /** 应用路由表 */
 export const routes: RouteObject[] = [
@@ -22,7 +23,7 @@ export const routes: RouteObject[] = [
 			{ path: 'installed', element: <Installed /> },
 			{ path: 'sync', element: <SyncCenter /> },
 			{ path: 'portability', element: <Portability /> },
-			{ path: 'settings', element: <Settings /> },
+			{ path: 'settings', element: <SettingRespVO /> },
 		],
 	},
 ];

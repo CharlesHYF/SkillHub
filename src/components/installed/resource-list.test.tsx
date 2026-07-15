@@ -1,14 +1,15 @@
 // 文件作用: ResourceList 渲染与交互单测(行渲染/徽标/行选中/分段筛选/搜索/行内菜单/分页)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { Resource } from '@/api/library';
+import type { ResourceRespVO } from '@/api/library';
 import { ResourceList } from './resource-list';
 
 /** displayName 默认跟随 name(与真实导入逻辑一致: 未显式改名时两者相同), 避免因固定默认值
  * 与 overrides.name 不一致而意外触发 deriveDescription 的"展示描述"分支 */
-function makeResource(overrides: Partial<Resource> = {}): Resource {
+function makeResource(overrides: Partial<ResourceRespVO> = {}): ResourceRespVO {
 	const name = overrides.name ?? 'demo-skill';
 	return {
 		id: 1,

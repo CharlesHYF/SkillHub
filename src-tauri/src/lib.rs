@@ -1,5 +1,6 @@
 // 文件作用: Tauri Builder 装配入口, 初始化 SQLite 数据库并注册 commands 层
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard};
@@ -59,6 +60,7 @@ pub fn run() {
 			commands::library::resource_import_local,
 			commands::library::resource_set_enabled,
 			commands::library::resource_delete,
+			commands::library::library_import_from_agents,
 			commands::agent::agent_detect,
 			commands::agent::agent_list,
 			commands::sync::assoc_set,

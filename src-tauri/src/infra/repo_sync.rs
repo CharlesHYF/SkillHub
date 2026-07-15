@@ -1,6 +1,7 @@
 // 文件作用: sync_run/sync_item 表仓储 —— 同步运行的起止与明细项记录, 显式列名/
 //           禁 SELECT */全参数化查询(阿里巴巴泰山版数据库规约)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use rusqlite::{params, Connection, Row};
 use serde::Serialize;

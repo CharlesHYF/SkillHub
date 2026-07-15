@@ -1,5 +1,6 @@
 // 文件作用: SyncStatusBadge 渲染单测(5 种状态文案可辨 + 语义色落在圆点上)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { SyncStatusBadge, type SyncStatus } from './sync-status-badge';

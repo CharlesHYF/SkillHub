@@ -5,9 +5,10 @@
 //           pages/marketplace-detail 定位需要弹出 AuthModal(components/auth/auth-modal)完成
 //           认证的 provider
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { invoke } from '@tauri-apps/api/core';
 
-import type { Resource, ResourceType } from './library';
+import type { ResourceRespVO, ResourceType } from './library';
 import type { McpServerDef } from './sync';
 
 /** 市场资源来源, 与后端 domain::market::SourceId 枚举变体名一一对应 */
@@ -20,8 +21,8 @@ export type InstallManifest =
 	| { Mcp: { serverDef: McpServerDef } }
 	| { McpTemplate: { serverDef: McpServerDef; requiredEnv: string[] } };
 
-/** 市场资源: 一条可浏览/可安装的 Skill/MCP, 与后端 domain::market::MarketResource 一一对应 */
-export interface MarketResource {
+/** 市场资源: 一条可浏览/可安装的 Skill/MCP, 与后端 domain::market::MarketResourceRespVO 一一对应 */
+export interface MarketResourceRespVO {
 	sourceType: MarketSourceType;
 	resType: ResourceType;
 	/** 来源内唯一标识(如 "owner/repo:path"), 与 sourceType 组合唯一定位一条市场资源 */
@@ -55,12 +56,12 @@ export interface MarketSearchParams {
 /** market_search 分页结果: items 为本页命中的市场资源, total 为该组过滤条件下的总命中数
  * (不受分页影响) */
 export interface MarketSearchResult {
-	items: MarketResource[];
+	items: MarketResourceRespVO[];
 	total: number;
 }
 
 /** market_refresh 结果: 本次刷新写入市场缓存的资源条数 */
-export interface MarketRefreshResult {
+export interface MarketRefreshRespVO {
 	count: number;
 }
 
@@ -81,16 +82,16 @@ export async function marketSearch(params: MarketSearchParams): Promise<MarketSe
 export async function marketDetail(
 	sourceType: number,
 	extId: string,
-): Promise<MarketResource | null> {
-	return invoke<MarketResource | null>('market_detail', { sourceType, extId });
+): Promise<MarketResourceRespVO | null> {
+	return invoke<MarketResourceRespVO | null>('market_detail', { sourceType, extId });
 }
 
 /** 刷新市场缓存: 并发拉取三源(github_skills/mcp_registry/github_mcp)全量资源并写入本地缓存 */
-export async function marketRefresh(): Promise<MarketRefreshResult> {
-	return invoke<MarketRefreshResult>('market_refresh');
+export async function marketRefresh(): Promise<MarketRefreshRespVO> {
+	return invoke<MarketRefreshRespVO>('market_refresh');
 }
 
-/** 下载并安装一条市场资源, 落地为本地库的一条 Resource; envOverrides 供 McpTemplate 类资源
+/** 下载并安装一条市场资源, 落地为本地库的一条 ResourceRespVO; envOverrides 供 McpTemplate 类资源
  * 填充 installManifest.requiredEnv 所需的环境变量取值(非 McpTemplate 资源可不传)。
  * 对应的后端 market_install 命令由并行任务实现, 本函数先行接好调用约定: 若因鉴权失败被拒绝,
  * 约定拒绝原因形如 "AUTH_REQUIRED:<provider>"(provider 为 domain::auth::ProviderKind 的
@@ -100,8 +101,8 @@ export async function marketInstall(
 	sourceType: number,
 	extId: string,
 	envOverrides?: Record<string, string>,
-): Promise<Resource> {
-	return invoke<Resource>('market_install', {
+): Promise<ResourceRespVO> {
+	return invoke<ResourceRespVO>('market_install', {
 		sourceType,
 		extId,
 		envOverrides: envOverrides ?? null,

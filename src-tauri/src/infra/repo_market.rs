@@ -3,14 +3,15 @@
 //           完整记录整份序列化进 raw_json 供还原(见 migrations/0001_init.sql market_cache
 //           表注释)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use rusqlite::{named_params, params, Connection, OptionalExtension, Row};
 
-use crate::domain::market::{MarketResource, Query, SortBy};
+use crate::domain::market::{MarketResourceRespVO, Query, SortBy};
 
-/// 将一行查询结果还原为 MarketResource: 只从 raw_json 反序列化完整记录; queryable 列
+/// 将一行查询结果还原为 MarketResourceRespVO: 只从 raw_json 反序列化完整记录; queryable 列
 /// (source_type 等)只供 SQL 侧过滤/排序使用, 不参与还原, 避免两份真源互相打架
-fn row_to_market_resource(row: &Row) -> rusqlite::Result<MarketResource> {
+fn row_to_market_resource(row: &Row) -> rusqlite::Result<MarketResourceRespVO> {
 	let raw_json: String = row.get(0)?;
 	serde_json::from_str(&raw_json).map_err(|err| {
 		rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(err))
@@ -19,11 +20,11 @@ fn row_to_market_resource(row: &Row) -> rusqlite::Result<MarketResource> {
 
 /// 按 (source_type, ext_id) 唯一键(uk_market_cache_src_ext)批量插入或冲突更新。queryable 列
 /// (source_type/res_type/ext_id/name/author/stars/category/auth_required)落库供 query 过滤/
-/// 排序, 完整记录整份序列化进 raw_json 供 query/get 还原。etag 列不在此维护: MarketResource
+/// 排序, 完整记录整份序列化进 raw_json 供 query/get 还原。etag 列不在此维护: MarketResourceRespVO
 /// 本身不带 etag 字段(它是一次 HTTP 响应的产物, 不是单条资源的属性), 冲突时保留原值, 新插入行
 /// 用列默认空串, 留给未来抓取层收到响应头后单独写入(见 etag_for 的读取侧)。fetch_time 每次
 /// 落库都刷新为当前时间, 表示"最近一次在本地缓存写入/刷新的时间"
-pub fn upsert_many(conn: &Connection, items: &[MarketResource]) -> rusqlite::Result<()> {
+pub fn upsert_many(conn: &Connection, items: &[MarketResourceRespVO]) -> rusqlite::Result<()> {
 	for item in items {
 		let raw_json = serde_json::to_string(item)
 			.map_err(|err| rusqlite::Error::ToSqlConversionFailure(Box::new(err)))?;
@@ -56,7 +57,10 @@ pub fn upsert_many(conn: &Connection, items: &[MarketResource]) -> rusqlite::Res
 /// (本页项, 总数); 总数按同一组过滤条件单独统计(不受分页影响), 供前端渲染分页控件。SQL 文本
 /// 固定不拼接: ORDER BY 子句无法参数化(绑定参数只能替换值, 不能替换列名/关键字), 故按 sort
 /// 变体各自使用一整条固定 SQL 字面量, 而不是拼接 ORDER BY 片段
-pub fn query(conn: &Connection, query: &Query) -> rusqlite::Result<(Vec<MarketResource>, i64)> {
+pub fn query(
+	conn: &Connection,
+	query: &Query,
+) -> rusqlite::Result<(Vec<MarketResourceRespVO>, i64)> {
 	let keyword_param: Option<String> = query.keyword.as_ref().map(|k| format!("%{k}%"));
 	let res_type_param: Option<i64> = query.res_type.map(i64::from);
 	let category_param: Option<&str> = query.category.as_deref();
@@ -123,7 +127,7 @@ pub fn get(
 	conn: &Connection,
 	source_type: i64,
 	ext_id: &str,
-) -> rusqlite::Result<Option<MarketResource>> {
+) -> rusqlite::Result<Option<MarketResourceRespVO>> {
 	conn.query_row(
 		"SELECT raw_json FROM market_cache WHERE source_type = ?1 AND ext_id = ?2",
 		params![source_type, ext_id],
@@ -176,8 +180,8 @@ mod tests {
 		conn
 	}
 
-	fn sample_market_resource(ext_id: &str) -> MarketResource {
-		MarketResource {
+	fn sample_market_resource(ext_id: &str) -> MarketResourceRespVO {
+		MarketResourceRespVO {
 			source_type: SourceId::GithubSkills,
 			res_type: ResourceType::Skill,
 			ext_id: ext_id.to_string(),
@@ -210,7 +214,7 @@ mod tests {
 		}
 	}
 
-	// upsert_many -> get 应完整还原 MarketResource(raw_json 往返不丢字段, 含嵌套 InstallManifest)
+	// upsert_many -> get 应完整还原 MarketResourceRespVO(raw_json 往返不丢字段, 含嵌套 InstallManifest)
 	#[test]
 	fn upsert_many_then_get_round_trips_full_record() {
 		let conn = setup_conn();
@@ -381,7 +385,7 @@ mod tests {
 	#[test]
 	fn query_paginates_and_returns_total_count() {
 		let conn = setup_conn();
-		let items: Vec<MarketResource> = (1..=5)
+		let items: Vec<MarketResourceRespVO> = (1..=5)
 			.map(|i| sample_market_resource(&format!("ext-{i}")))
 			.collect();
 		upsert_many(&conn, &items).unwrap();
@@ -411,7 +415,7 @@ mod tests {
 		);
 	}
 
-	// etag_for: upsert_many 不维护 etag 列(MarketResource 不带 etag 字段), 落库后默认应为空串;
+	// etag_for: upsert_many 不维护 etag 列(MarketResourceRespVO 不带 etag 字段), 落库后默认应为空串;
 	// 该列一旦被直接写入(模拟未来抓取层收到 HTTP 响应头后落库), etag_for 应能读到最新值
 	#[test]
 	fn etag_for_reads_current_column_value() {

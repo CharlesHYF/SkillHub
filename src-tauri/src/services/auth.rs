@@ -7,6 +7,7 @@
 //           回调, 均不依赖 Tauri, 可脱离 WebView 直接单测)。真正打开 WebviewWindow 承载授权页
 //           那部分 Tauri 专属编排逻辑在 commands::auth::auth_login, 不下沉本文件
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
@@ -21,7 +22,7 @@ use rusqlite::Connection;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-use crate::domain::auth::{AuthAccount, PkceChallenge, ProviderKind, TokenSet};
+use crate::domain::auth::{AuthAccountRespVO, PkceChallenge, ProviderKind, TokenSet};
 use crate::infra::keychain;
 use crate::infra::repo_auth;
 
@@ -367,22 +368,22 @@ fn handle_callback_connection(mut stream: TcpStream, expected_state: &str) -> Re
 // ---------- validate_pat ----------
 
 /// 校验一个访问令牌(手动录入的 PAT, 或 OAuth 换来的 access token 均可): 调该 provider 的身份
-/// 接口取账号标识, 组装成待入库的 AuthAccount(id/connect_time 均为占位值, 由 store 落库时
+/// 接口取账号标识, 组装成待入库的 AuthAccountRespVO(id/connect_time 均为占位值, 由 store 落库时
 /// 填充真实值, 见其文档)。base 可注入(生产用 default_validate_base, 测试指向 wiremock)。
 /// Token(手动录入的通用访问令牌, 不属于 GitHub/Google/Microsoft 任一品牌)没有可调的身份接口,
-/// 跳过网络请求, 直接返回一个固定账号标签的 AuthAccount(见 (provider,account) 唯一键约束下,
+/// 跳过网络请求, 直接返回一个固定账号标签的 AuthAccountRespVO(见 (provider,account) 唯一键约束下,
 /// 这相当于"仅此一条"的通用令牌槽位)
 pub async fn validate_pat(
 	client: &Client,
 	provider: ProviderKind,
 	base: &str,
 	token: &str,
-) -> Result<AuthAccount> {
+) -> Result<AuthAccountRespVO> {
 	let (account, scope) = match provider {
 		ProviderKind::Token => ("access-token".to_string(), String::new()),
 		_ => fetch_identity(client, provider, base, token).await?,
 	};
-	Ok(AuthAccount {
+	Ok(AuthAccountRespVO {
 		id: 0,
 		provider,
 		account,
@@ -453,7 +454,7 @@ pub fn default_validate_base(provider: ProviderKind) -> &'static str {
 	}
 }
 
-/// 从身份接口响应体取出用作 AuthAccount.account 的字段: GitHub 用 login; Google 优先 email,
+/// 从身份接口响应体取出用作 AuthAccountRespVO.account 的字段: GitHub 用 login; Google 优先 email,
 /// 未开放 email scope 时退回 sub(始终存在的稳定用户 ID); Microsoft 优先 mail(部分租户为空)
 /// 退回 userPrincipalName
 fn identity_field(provider: ProviderKind, body: &serde_json::Value) -> Option<String> {
@@ -494,7 +495,7 @@ fn refresh_keyring_ref(primary_ref: &str) -> String {
 }
 
 /// 借同一个 SQLite 连接取当前 UTC 时间(与其它时间戳列的 datetime('now')默认值同格式), 供
-/// store 落库前填充 AuthAccount.connect_time; 不引入日期时间 crate, 与全库时间戳保持同一
+/// store 落库前填充 AuthAccountRespVO.connect_time; 不引入日期时间 crate, 与全库时间戳保持同一
 /// 权威时间源与格式(另见 unix_expiry 处"为什么不用日期库"的说明)
 fn sqlite_now(conn: &Connection) -> rusqlite::Result<String> {
 	conn.query_row("SELECT datetime('now')", [], |row| row.get(0))
@@ -503,7 +504,7 @@ fn sqlite_now(conn: &Connection) -> rusqlite::Result<String> {
 /// 落库一个已校验通过的账号(PAT 校验或 OAuth 换 token 之后均调用本函数): account 入
 /// auth_account 表(connect_time 由本函数取当前时间填充, 覆盖调用方传入的占位值), access/
 /// refresh 令牌入系统钥匙串, 绝不落库(见 domain::auth::TokenSet 文档)
-pub fn store(conn: &Connection, account: &AuthAccount, tokens: &TokenSet) -> Result<()> {
+pub fn store(conn: &Connection, account: &AuthAccountRespVO, tokens: &TokenSet) -> Result<()> {
 	let mut final_account = account.clone();
 	final_account.connect_time = sqlite_now(conn)?;
 	let keyring_ref = build_keyring_ref(account.provider, &account.account);
@@ -565,8 +566,8 @@ mod tests {
 
 	/// 构造一个待落库的样例账号(provider 固定 GitHub, id/connect_time 均为占位值, 与
 	/// validate_pat 实际产出的形状一致), account 由调用方传入(测试传随机名避免撞真实钥匙串条目)
-	fn sample_account(account: &str) -> AuthAccount {
-		AuthAccount {
+	fn sample_account(account: &str) -> AuthAccountRespVO {
+		AuthAccountRespVO {
 			id: 0,
 			provider: ProviderKind::GitHub,
 			account: account.to_string(),

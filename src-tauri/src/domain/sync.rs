@@ -1,8 +1,9 @@
 // 文件作用: 同步引擎领域类型与声明式协调算法 —— diff 计划/执行结果的数据形状(DiffAction/
-//           DiffItem/DiffPlan/ItemOutcome)、期望资源的富类型(DesiredPayload/DesiredResource),
+//           DiffItem/DiffPlanRespVO/ItemOutcome)、期望资源的富类型(DesiredPayload/DesiredResource),
 //           以及纯函数 reconcile(比较期望态与某 Agent 实际态, 产出待应用的差异计划), 供
 //           infra::adapter::AgentAdapter::apply(Task 7b)与 services::sync 编排(Task 7c)使用。
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeSet;
 
@@ -34,8 +35,8 @@ pub enum DesiredPayload {
 }
 
 /// 期望同步的一个资源目标: 类型 + 名称 + 版本 + 可落地内容; reconcile 的输入之一, 与某 Agent
-/// 的 ActualState 比较后产出 DiffPlan。`res_type` 应与 `payload` 的变体形状保持一致(通常两者
-/// 都源自同一份 Resource 记录), reconcile 对不一致的脏数据只做静默跳过, 不 panic
+/// 的 ActualState 比较后产出 DiffPlanRespVO。`res_type` 应与 `payload` 的变体形状保持一致(通常两者
+/// 都源自同一份 ResourceRespVO 记录), reconcile 对不一致的脏数据只做静默跳过, 不 panic
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DesiredResource {
@@ -62,7 +63,7 @@ pub struct DiffItem {
 /// 一次同步中某 Agent 待处理的完整差异计划
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct DiffPlan {
+pub struct DiffPlanRespVO {
 	pub items: Vec<DiffItem>,
 }
 
@@ -95,7 +96,7 @@ pub fn reconcile(
 	desired: &[DesiredResource],
 	actual: &ActualState,
 	managed: &BTreeSet<(ResourceType, String)>,
-) -> DiffPlan {
+) -> DiffPlanRespVO {
 	let mut items: Vec<DiffItem> = Vec::new();
 
 	for item in desired {
@@ -137,7 +138,7 @@ pub fn reconcile(
 		}
 	}
 
-	DiffPlan { items }
+	DiffPlanRespVO { items }
 }
 
 /// 对单个 desired 项按其 res_type/payload 形状分派到 MCP/Skill 各自的 Add/Update 判定;
@@ -240,10 +241,10 @@ mod tests {
 		assert!(json.get("res_type").is_none());
 	}
 
-	// DiffPlan: 内嵌 DiffItem 列表应整体序列化成功, 数组元素字段亦为 camelCase
+	// DiffPlanRespVO: 内嵌 DiffItem 列表应整体序列化成功, 数组元素字段亦为 camelCase
 	#[test]
 	fn diff_plan_serializes_nested_items() {
-		let plan = DiffPlan {
+		let plan = DiffPlanRespVO {
 			items: vec![DiffItem {
 				res_type: ResourceType::Mcp,
 				name: "filesystem".to_string(),

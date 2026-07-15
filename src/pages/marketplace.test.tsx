@@ -1,12 +1,17 @@
 // 文件作用: Marketplace 页面集成测试(mock src/api/market) —— 卡片渲染/分段与筛选/排序/分类/
 //           分页交互触发 market_search 参数变化/点击卡片经 market_detail 填充详情面板/下载按钮
-//           触发 market_install(鉴权失败时的占位提示)/刷新按钮触发 market_refresh
+//           触发 market_install(鉴权失败时的占位提示)/挂载时市场缓存为空则自动触发 market_refresh
+//           (M5 Task F1: 已移除手动"刷新"按钮)/挂载后默认选中首个结果且详情面板常驻、无结果时
+//           详情面板展示空态(M5 Task F2)。MarketDetailPanel 内新增的"查看详情"链接依赖 Router
+//           语境, 故 renderMarketplace 经 MemoryRouter 包裹
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { MarketResource } from '@/api/market';
+import { MemoryRouter } from 'react-router-dom';
+import type { MarketResourceRespVO } from '@/api/market';
 import { useUiStore } from '@/stores/ui';
 import Marketplace from './marketplace';
 
@@ -19,7 +24,7 @@ vi.mock('@/api/market', () => ({
 
 import { marketSearch, marketDetail, marketRefresh, marketInstall } from '@/api/market';
 
-function makeMarketResource(overrides: Partial<MarketResource> = {}): MarketResource {
+function makeMarketResource(overrides: Partial<MarketResourceRespVO> = {}): MarketResourceRespVO {
 	const name = overrides.name ?? 'data-visualizer';
 	return {
 		sourceType: 'GithubSkills',
@@ -44,7 +49,9 @@ function renderMarketplace() {
 	const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 	return render(
 		<QueryClientProvider client={queryClient}>
-			<Marketplace />
+			<MemoryRouter>
+				<Marketplace />
+			</MemoryRouter>
 		</QueryClientProvider>,
 	);
 }
@@ -52,8 +59,14 @@ function renderMarketplace() {
 describe('Marketplace 页面', () => {
 	beforeEach(() => {
 		useUiStore.getState().reset();
-		vi.mocked(marketSearch).mockReset().mockResolvedValue({ items: [], total: 0 });
-		vi.mocked(marketDetail).mockReset();
+		// 默认 total=1(非空), 避免与本文件无关的用例意外触发"缓存为空自动刷新"逻辑(该逻辑本身
+		// 由下方专门的用例覆盖, 见"挂载时市场缓存为空..."与"挂载时市场缓存非空...")
+		vi.mocked(marketSearch).mockReset().mockResolvedValue({ items: [], total: 1 });
+		// 默认兜底 resolve null(非 undefined): M5 起挂载后默认选中首个结果, 会让更多用例真的
+		// 触发 detailQuery; TanStack Query 的 queryFn 不允许 resolve 出 undefined(会被内部当
+		// 作错误处理), 未显式 mockResolvedValue 的用例若保持"裸 reset 无返回值"会在控制台报错。
+		// 各用例仍可自行 mockResolvedValue(resource) 覆盖这个默认值
+		vi.mocked(marketDetail).mockReset().mockResolvedValue(null);
 		vi.mocked(marketRefresh).mockReset().mockResolvedValue({ count: 0 });
 		vi.mocked(marketInstall).mockReset();
 	});
@@ -240,14 +253,59 @@ describe('Marketplace 页面', () => {
 		expect(await screen.findByText('需在详情页登录')).toBeInTheDocument();
 	});
 
-	it('点击刷新应调用 market_refresh', async () => {
-		const user = userEvent.setup();
-		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+	it('不应再渲染手动"刷新"按钮', async () => {
 		renderMarketplace();
 		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+		expect(screen.queryByRole('button', { name: /刷新/ })).not.toBeInTheDocument();
+	});
 
-		await user.click(screen.getByRole('button', { name: /刷新/ }));
+	it('挂载时市场缓存为空(首次搜索 total=0)应自动调用 market_refresh 并失效重新搜索', async () => {
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+		renderMarketplace();
 
-		await waitFor(() => expect(marketRefresh).toHaveBeenCalled());
+		await waitFor(() => expect(marketRefresh).toHaveBeenCalledTimes(1));
+		// 刷新成功后应失效 market-search 缓存, 触发再次搜索(至少 2 次: 挂载首次 + 刷新后重取)
+		await waitFor(() => expect(marketSearch).toHaveBeenCalledTimes(2));
+	});
+
+	it('挂载时市场缓存非空(首次搜索 total>0)不应自动调用 market_refresh', async () => {
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 5 });
+		renderMarketplace();
+
+		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+		expect(marketRefresh).not.toHaveBeenCalled();
+	});
+
+	it('本会话已刷新过市场缓存时, 即使首次搜索 total=0 也不应再次自动调用 market_refresh', async () => {
+		useUiStore.getState().setMarketRefreshed();
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+		renderMarketplace();
+
+		await waitFor(() => expect(marketSearch).toHaveBeenCalled());
+		expect(marketRefresh).not.toHaveBeenCalled();
+	});
+
+	// 还原原型第 2 屏: 默认选中 data-visualizer(即当页第一条结果), 面板"常驻"且无需用户点击就有
+	// 内容, 与"点击卡片应经 market_detail 查询..."用例的区别是这里全程不做任何点击操作
+	it('挂载后应默认选中当页第一条结果, 详情面板无需点击即展示该资源', async () => {
+		const resource = makeMarketResource({ name: 'data-visualizer' });
+		vi.mocked(marketSearch).mockResolvedValue({ items: [resource], total: 1 });
+		vi.mocked(marketDetail).mockResolvedValue(resource);
+
+		renderMarketplace();
+
+		expect(await screen.findByText('简介')).toBeInTheDocument();
+		expect(marketDetail).toHaveBeenCalledWith(1, 'acme/skills:data-visualizer');
+	});
+
+	// 详情面板改为常驻展示后, 无结果(如搜索/筛选后当页为空)不应让面板从布局里整体消失, 而是在
+	// 同一位置展示空态, 且不应凭空调用 market_detail(没有可选中的第一条)
+	it('搜索无结果时详情面板应展示空态, 且不调用 market_detail', async () => {
+		vi.mocked(marketSearch).mockResolvedValue({ items: [], total: 0 });
+
+		renderMarketplace();
+
+		expect(await screen.findByText('暂无可查看的详情')).toBeInTheDocument();
+		expect(marketDetail).not.toHaveBeenCalled();
 	});
 });

@@ -3,14 +3,15 @@
 //           (含无真实字段的合理占位)、下载并安装成功态、market_install 因 AUTH_REQUIRED 失败时
 //           打开 AuthModal 并在认证成功后自动重试安装(GitHub 与令牌两条路径)、返回 Marketplace
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import type { MarketResource } from '@/api/market';
-import type { AuthAccount } from '@/api/auth';
-import type { Resource } from '@/api/library';
+import type { MarketResourceRespVO } from '@/api/market';
+import type { AuthAccountRespVO } from '@/api/auth';
+import type { ResourceRespVO } from '@/api/library';
 import MarketplaceDetail, { buildMarketDetailId, parseMarketDetailId } from './marketplace-detail';
 
 vi.mock('@/api/market', async (importOriginal) => {
@@ -31,7 +32,7 @@ vi.mock('react-router-dom', async (importOriginal) => {
 import { marketDetail, marketInstall } from '@/api/market';
 import { authLogin, authEnterToken } from '@/api/auth';
 
-function makeResource(overrides: Partial<MarketResource> = {}): MarketResource {
+function makeResource(overrides: Partial<MarketResourceRespVO> = {}): MarketResourceRespVO {
 	const name = overrides.name ?? 'github-sync-mcp';
 	return {
 		sourceType: 'GithubMcp',
@@ -54,7 +55,7 @@ function makeResource(overrides: Partial<MarketResource> = {}): MarketResource {
 	};
 }
 
-function makeAccount(overrides: Partial<AuthAccount> = {}): AuthAccount {
+function makeAccount(overrides: Partial<AuthAccountRespVO> = {}): AuthAccountRespVO {
 	return {
 		id: 1,
 		provider: 'GitHub',
@@ -66,7 +67,7 @@ function makeAccount(overrides: Partial<AuthAccount> = {}): AuthAccount {
 	};
 }
 
-function makeInstalledResource(overrides: Partial<Resource> = {}): Resource {
+function makeInstalledResource(overrides: Partial<ResourceRespVO> = {}): ResourceRespVO {
 	return {
 		id: 1,
 		resType: 'Mcp',
@@ -138,6 +139,17 @@ describe('MarketplaceDetail 页面', () => {
 		expect(screen.getByText('安装步骤')).toBeInTheDocument();
 		expect(screen.getByText('版本历史')).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /收藏/ })).toBeInTheDocument();
+	});
+
+	it('version/category/updatedAt 为空字符串时应展示占位符 "—", 不展示裸 "v-"', async () => {
+		vi.mocked(marketDetail).mockResolvedValue(
+			makeResource({ version: '', category: '', updatedAt: '' }),
+		);
+		renderDetail(buildMarketDetailId(3, 'acme/mcp:github-sync-mcp'));
+
+		expect(await screen.findByText('github-sync-mcp')).toBeInTheDocument();
+		expect(screen.queryByText(/v-/)).not.toBeInTheDocument();
+		expect(screen.getAllByText('—').length).toBeGreaterThan(0);
 	});
 
 	it('marketDetail 返回 null 时应展示资源不存在提示', async () => {

@@ -1,5 +1,6 @@
 // 文件作用: lib/utils 时间格式化函数单测(formatDateTime/formatRelativeTime)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { formatDateTime, formatRelativeTime } from './utils';
 

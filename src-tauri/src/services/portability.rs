@@ -1,4 +1,4 @@
-// 文件作用: 导入导出服务编排层(导出部分) —— 按 ExportOptions 收集资源元数据与 data_dir 内容、
+// 文件作用: 导入导出服务编排层(导出部分) —— 按 ExportReqVO 收集资源元数据与 data_dir 内容、
 //           可选设置/关联、算 sha256 校验和、组装 manifest 并按 Zip/Tar/Json 三种格式打包,
 //           写入 import_export_log(见 export_bundle)。只接受 &Connection 与 &Path(data_dir),
 //           不摸 AppState/Tauri 运行时, 呼应 services::market/services::library 既有的分层约定。
@@ -6,17 +6,18 @@
 //           关于 scope 与 include_skills/include_mcp 的关系: include_skills/include_mcp 是唯一
 //           实际生效的类型开关(不论 scope 取何值均恒定生效, 见 collect_resources); scope=All 与
 //           scope=ByType 在当前实现下语义等价(ByType 就是"正通过 include_skills/include_mcp 挑
-//           类型"这一模式本身, 并不叠加额外过滤), scope=ByTime 因 ExportOptions 未携带任何时间
+//           类型"这一模式本身, 并不叠加额外过滤), scope=ByTime 因 ExportReqVO 未携带任何时间
 //           范围字段, 暂等价于 All/ByType(留待后续任务若要真正实现"按时间"过滤, 需先给
-//           ExportOptions 增加时间范围字段, 再据 update_time 二次过滤)。
+//           ExportReqVO 增加时间范围字段, 再据 update_time 二次过滤)。
 //
-//           关于 include_config 同时门控 settings.json 与 agents.json: ExportOptions 未单独
+//           关于 include_config 同时门控 settings.json 与 agents.json: ExportReqVO 未单独
 //           提供"是否包含资源-Agent 关联"的开关, brief 要求二者取一种关系并注释——这里选择让
 //           agents.json 与 settings.json 共用 include_config 这一开关, 因为 SkillHub 语境下
 //           "配置"泛指"本机如何使用这些资源"的状态, 既包含应用级设置(setting 表), 也包含
 //           "期望哪些资源装到哪些 Agent"的关联关系(resource_agent 表), 二者都不是"资源内容
 //           本身", 用同一开关归类是当前选项形状下最贴切的一种取舍。
 // 创建日期: 2026-07-10
+// 修改日期: 2026-07-13
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -36,9 +37,10 @@ use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
 use crate::domain::portability::{
-	BundleFormat, ConflictStrategy, Counts, ExportOptions, ImportOutcome, ImportPreview, Manifest,
+	BundleFormat, ConflictStrategy, Counts, ExportReqVO, ImportOutcomeRespVO, ImportPreviewRespVO,
+	ManifestRespVO,
 };
-use crate::domain::resource::{Resource, ResourceType, SourceType};
+use crate::domain::resource::{ResourceRespVO, ResourceType, SourceType};
 use crate::infra::adapter::skill_target::parse_frontmatter_version;
 use crate::infra::repo_agent;
 use crate::infra::repo_assoc;
@@ -73,7 +75,7 @@ struct AgentLinkExport {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct JsonBundle {
-	manifest: Manifest,
+	manifest: ManifestRespVO,
 	files: BTreeMap<String, String>,
 }
 
@@ -81,7 +83,7 @@ struct JsonBundle {
 /// 注释"关于 scope 与 include_skills/include_mcp 的关系"), 两者都为 false 时返回空列表, 不视为
 /// 错误(导出一个空壳, 由调用方/前端决定是否阻止这种操作)。Skill 在前、Mcp 在后, 且各自按
 /// repo_resource::list 既有的 id 升序返回, 整体顺序确定, 便于导出内容/manifest 可重现
-fn collect_resources(conn: &Connection, opts: &ExportOptions) -> Result<Vec<Resource>> {
+fn collect_resources(conn: &Connection, opts: &ExportReqVO) -> Result<Vec<ResourceRespVO>> {
 	let mut resources = Vec::new();
 	if opts.include_skills {
 		resources.extend(repo_resource::list(
@@ -111,7 +113,7 @@ fn collect_resources(conn: &Connection, opts: &ExportOptions) -> Result<Vec<Reso
 /// 统一把路径分隔符归一化为 '/', 不论运行平台, 保证打包产物(zip/tar 条目名与 manifest 键)
 /// 跨平台一致。local_path 不在 data_dir 内(理论不会发生, 见 services::library::delete 同类
 /// 防御性判断)时返回 Err —— 导出场景下宁可整体失败也不悄悄漏掉一部分内容而让用户误以为备份完整
-fn bundle_root_rel_path(data_dir: &Path, resource: &Resource) -> Result<String> {
+fn bundle_root_rel_path(data_dir: &Path, resource: &ResourceRespVO) -> Result<String> {
 	let full = Path::new(&resource.local_path);
 	let rel = full.strip_prefix(data_dir).map_err(|_| {
 		anyhow!(
@@ -201,8 +203,12 @@ fn collect_settings_file(conn: &Connection) -> Result<(BundleFile, i64)> {
 /// 把本次导出涉及资源(resources)的期望态关联(resource_agent, 仅 desired=1, 见
 /// repo_assoc::list_all_links)落地为 agents.json 的一条待打包文件, 只保留关联双方里资源确实
 /// 在本次导出集合内的记录(不引用未导出的资源), 返回该文件与写入的关联条数(供 Counts.agent)
-fn collect_agents_file(conn: &Connection, resources: &[Resource]) -> Result<(BundleFile, i64)> {
-	let resource_by_id: BTreeMap<i64, &Resource> = resources.iter().map(|r| (r.id, r)).collect();
+fn collect_agents_file(
+	conn: &Connection,
+	resources: &[ResourceRespVO],
+) -> Result<(BundleFile, i64)> {
+	let resource_by_id: BTreeMap<i64, &ResourceRespVO> =
+		resources.iter().map(|r| (r.id, r)).collect();
 
 	let links: Vec<AgentLinkExport> = repo_assoc::list_all_links(conn)?
 		.into_iter()
@@ -228,15 +234,15 @@ fn collect_agents_file(conn: &Connection, resources: &[Resource]) -> Result<(Bun
 	))
 }
 
-/// 按 opts 收集资源/配置/关联并打包到 out_path, 返回打包清单(Manifest); 写一条导出方向
+/// 按 opts 收集资源/配置/关联并打包到 out_path, 返回打包清单(ManifestRespVO); 写一条导出方向
 /// (direction=0)的 import_export_log 记录。纯同步, 不含网络 I/O, 全程持锁调用亦可(无 await,
 /// 不涉及 commands::market 那种 Send 拆分顾虑, 见 commands::portability::export_bundle)
 pub fn export_bundle(
 	conn: &Connection,
 	data_dir: &Path,
-	opts: &ExportOptions,
+	opts: &ExportReqVO,
 	out_path: &Path,
-) -> Result<Manifest> {
+) -> Result<ManifestRespVO> {
 	let resources = collect_resources(conn, opts)?;
 
 	let mut files: Vec<BundleFile> = Vec::new();
@@ -280,7 +286,7 @@ pub fn export_bundle(
 		checksums.insert(file.rel_path.clone(), sha256_hex(&file.bytes));
 	}
 
-	let manifest = Manifest {
+	let manifest = ManifestRespVO {
 		schema_version: 1,
 		exported_at: rfc3339_now(),
 		counts: Counts {
@@ -312,7 +318,7 @@ pub fn export_bundle(
 /// 打包为 Zip: manifest.json 在先, 其余文件按收集顺序(Skill 资源在前、Mcp 在后, 各自内部见
 /// collect_dir_files 的排序说明)依次写入, 压缩方式用 Deflate(比 Stored 体积更小, 且已在
 /// Cargo.toml 只开启 deflate 特性, 不引入 aes/zstd/bzip2 等未用到的能力)
-fn write_zip(out_path: &Path, manifest: &Manifest, files: &[BundleFile]) -> Result<()> {
+fn write_zip(out_path: &Path, manifest: &ManifestRespVO, files: &[BundleFile]) -> Result<()> {
 	let file = fs::File::create(out_path)
 		.with_context(|| format!("创建文件失败: {}", out_path.display()))?;
 	let mut zip = ZipWriter::new(file);
@@ -353,7 +359,7 @@ fn append_tar_entry(
 
 /// 打包为 Tar.gz: tar 只管归档结构本身, 压缩交给外层包一层 GzEncoder(默认压缩级别), 与
 /// Tar.gz 的常规组合方式一致; manifest.json 在先, 其余文件按收集顺序依次写入
-fn write_tar_gz(out_path: &Path, manifest: &Manifest, files: &[BundleFile]) -> Result<()> {
+fn write_tar_gz(out_path: &Path, manifest: &ManifestRespVO, files: &[BundleFile]) -> Result<()> {
 	let file = fs::File::create(out_path)
 		.with_context(|| format!("创建文件失败: {}", out_path.display()))?;
 	let encoder = GzEncoder::new(file, Compression::default());
@@ -373,7 +379,11 @@ fn write_tar_gz(out_path: &Path, manifest: &Manifest, files: &[BundleFile]) -> R
 /// 打包为单文件 Json: manifest 字段与 zip/tar 内 manifest.json 完全一致的结构; 其余每个文件的
 /// 二进制内容用标准 base64(带 padding)内联进 files 字段, 供没有归档容器可用的场景(如需要把
 /// 整个导出内容粘贴进纯文本渠道)使用, 代价是体积比二进制归档大(base64 约膨胀 1/3, 且没有压缩)
-fn write_json_inline(out_path: &Path, manifest: &Manifest, files: &[BundleFile]) -> Result<()> {
+fn write_json_inline(
+	out_path: &Path,
+	manifest: &ManifestRespVO,
+	files: &[BundleFile],
+) -> Result<()> {
 	let encoded: BTreeMap<String, String> = files
 		.iter()
 		.map(|entry| (entry.rel_path.clone(), BASE64_STANDARD.encode(&entry.bytes)))
@@ -387,7 +397,7 @@ fn write_json_inline(out_path: &Path, manifest: &Manifest, files: &[BundleFile])
 	Ok(())
 }
 
-/// 取当前 UTC 时间拼一个 RFC3339 字符串(如 "2026-07-10T12:34:56Z"), 供 Manifest.exported_at;
+/// 取当前 UTC 时间拼一个 RFC3339 字符串(如 "2026-07-10T12:34:56Z"), 供 ManifestRespVO.exported_at;
 /// 不引入 chrono/time 等日期时间 crate, 呼应 services::auth::sqlite_now 文档"不引入日期时间
 /// crate, 与全库时间戳保持同一权威时间源"的既有取舍, 只精确到秒(足够展示粒度)
 fn rfc3339_now() -> String {
@@ -452,7 +462,7 @@ const MAX_TOTAL_BUNDLE_BYTES: u64 = 300 * 1024 * 1024;
 /// 与 manifest.checksums 同一路径体系, 不含 manifest.json 本身), 未做任何磁盘落地 —— 是否、如何
 /// 落地由 M3 Task 4 的 import_bundle 决定, 本类型只承载"已读进来 + 已验证安全/完整"这一状态
 pub struct ParsedBundle {
-	pub manifest: Manifest,
+	pub manifest: ManifestRespVO,
 	pub entries: BTreeMap<String, Vec<u8>>,
 	/// 导入包原始文件名(取自路径的 file_name, 取不到则为空串), 供 import_bundle(M3 Task 4)落地
 	/// 时写入 import_export_log.file_name, 与 export_bundle 写入该列的既有惯例对称(见其文档)
@@ -580,13 +590,13 @@ fn check_size_limits(
 }
 
 /// 解析 Zip 格式导入包: 逐条目读取(目录条目跳过), 名为 "manifest.json" 的条目单独解析为
-/// Manifest, 其余按原始条目名收进 entries; 单条目读取经 read_capped 限制在 MAX_ENTRY_BYTES 内,
+/// ManifestRespVO, 其余按原始条目名收进 entries; 单条目读取经 read_capped 限制在 MAX_ENTRY_BYTES 内,
 /// 边读边累加总量, 一旦超过 MAX_TOTAL_BUNDLE_BYTES 立即失败, 不等全部读完再检查
-fn parse_zip_bundle(bytes: &[u8]) -> Result<(Manifest, BTreeMap<String, Vec<u8>>)> {
+fn parse_zip_bundle(bytes: &[u8]) -> Result<(ManifestRespVO, BTreeMap<String, Vec<u8>>)> {
 	let cursor = Cursor::new(bytes);
 	let mut archive = ZipArchive::new(cursor).context("zip 归档格式无效")?;
 
-	let mut manifest: Option<Manifest> = None;
+	let mut manifest: Option<ManifestRespVO> = None;
 	let mut entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 	let mut total_size: u64 = 0;
 
@@ -615,12 +625,12 @@ fn parse_zip_bundle(bytes: &[u8]) -> Result<(Manifest, BTreeMap<String, Vec<u8>>
 }
 
 /// 解析 Tar.gz 格式导入包: 逐条目读取(目录条目跳过), 其余处理方式与 parse_zip_bundle 一致
-fn parse_tar_gz_bundle(bytes: &[u8]) -> Result<(Manifest, BTreeMap<String, Vec<u8>>)> {
+fn parse_tar_gz_bundle(bytes: &[u8]) -> Result<(ManifestRespVO, BTreeMap<String, Vec<u8>>)> {
 	let cursor = Cursor::new(bytes);
 	let decoder = GzDecoder::new(cursor);
 	let mut archive = tar::Archive::new(decoder);
 
-	let mut manifest: Option<Manifest> = None;
+	let mut manifest: Option<ManifestRespVO> = None;
 	let mut entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
 	let mut total_size: u64 = 0;
 
@@ -654,7 +664,7 @@ fn parse_tar_gz_bundle(bytes: &[u8]) -> Result<(Manifest, BTreeMap<String, Vec<u
 
 /// 解析单文件 Json 格式导入包: 结构与 write_json_inline 写出的 JsonBundle 完全对称, files 里
 /// 每项内容先 base64 解码, 再套用与 zip/tar 一致的大小上限检查
-fn parse_json_bundle(bytes: &[u8]) -> Result<(Manifest, BTreeMap<String, Vec<u8>>)> {
+fn parse_json_bundle(bytes: &[u8]) -> Result<(ManifestRespVO, BTreeMap<String, Vec<u8>>)> {
 	let bundle: JsonBundle = serde_json::from_slice(bytes).context("解析 Json 格式导入包失败")?;
 
 	let mut entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -685,7 +695,7 @@ fn parse_json_bundle(bytes: &[u8]) -> Result<(Manifest, BTreeMap<String, Vec<u8>
 /// 穿越(纯字符串运算)→ 条目数与 manifest 记录是否一一对应(集合大小比较, 顺带堵住"归档里夹带
 /// manifest 未记录的额外文件"这个 manifest.checksums 逐项比对本身覆盖不到的缺口)→ 大小上限 →
 /// 逐条目 sha256(需要对每个条目内容整体算一遍摘要, 最慢, 放最后)
-fn validate_bundle(manifest: &Manifest, entries: &BTreeMap<String, Vec<u8>>) -> Result<()> {
+fn validate_bundle(manifest: &ManifestRespVO, entries: &BTreeMap<String, Vec<u8>>) -> Result<()> {
 	if manifest.schema_version > MAX_SUPPORTED_SCHEMA_VERSION {
 		return Err(anyhow!(
 			"导入包 schema_version={} 高于当前支持的最高版本 {MAX_SUPPORTED_SCHEMA_VERSION}, 请升级 SkillHub 后重试",
@@ -768,8 +778,8 @@ pub fn parse_bundle(path: &Path) -> Result<ParsedBundle> {
 /// 阶段已经 Err, 根本不会走到这一步构造出 ParsedBundle), 之所以仍实打实算一遍而不直接硬编码
 /// true, 是为了这个字段本身保持自解释, 不因未来 validate_bundle 校验策略调整(如放宽为警告而非
 /// 硬错误)而变成一个名不副实的死字段
-pub fn preview(parsed: &ParsedBundle) -> ImportPreview {
-	ImportPreview {
+pub fn preview(parsed: &ParsedBundle) -> ImportPreviewRespVO {
+	ImportPreviewRespVO {
 		skill: parsed.manifest.counts.skill,
 		mcp: parsed.manifest.counts.mcp,
 		config: parsed.manifest.counts.config,
@@ -865,7 +875,7 @@ fn find_existing_resource(
 	conn: &Connection,
 	res_type: ResourceType,
 	name: &str,
-) -> Result<Option<Resource>> {
+) -> Result<Option<ResourceRespVO>> {
 	Ok(repo_resource::list(
 		conn,
 		&ListFilter {
@@ -932,14 +942,14 @@ fn land_mcp_content(data_dir: &Path, landed_name: &str, bytes: &[u8]) -> Result<
 }
 
 /// 解析某待落地资源应采用的版本号: 优先取 manifest.versions 里按其"导出时原始名称"记录的精确
-/// 锁定值(仅 ExportOptions.include_version_lock=true 时非空, 键为 "skills/<name>"/
+/// 锁定值(仅 ExportReqVO.include_version_lock=true 时非空, 键为 "skills/<name>"/
 /// "mcp/<name>.json", 与 export_bundle 写入该 map 时的键格式一致, 见其文档); 取不到时退回按
 /// 内容自行解析 —— Skill 从其 SKILL.md 内容解析 frontmatter version(与本地导入
 /// services::library::import_skill 同一逻辑, 见 parse_frontmatter_version), Mcp 恒为空串
 /// (定义文件本身不携带版本概念, 与本地导入 services::library::import_mcp 同一惯例)。
 /// 注意用的是资源"导出时的原始名称"(item.name, KeepBoth 改名前), 因为 manifest.versions 的键
 /// 在导出那一刻就已固定, 与导入这一刻是否需要改名无关
-fn resolve_version(manifest: &Manifest, item: &ImportItem) -> String {
+fn resolve_version(manifest: &ManifestRespVO, item: &ImportItem) -> String {
 	let root_key = match item.res_type {
 		ResourceType::Skill => format!("skills/{}", item.name),
 		ResourceType::Mcp => format!("mcp/{}.json", item.name),
@@ -969,10 +979,10 @@ fn resolve_version(manifest: &Manifest, item: &ImportItem) -> String {
 fn land_item(
 	conn: &Connection,
 	data_dir: &Path,
-	manifest: &Manifest,
+	manifest: &ManifestRespVO,
 	item: &ImportItem,
 	landed_name: &str,
-	existing: Option<&Resource>,
+	existing: Option<&ResourceRespVO>,
 ) -> Result<i64> {
 	let version = resolve_version(manifest, item);
 	let local_path = match item.res_type {
@@ -1074,7 +1084,7 @@ fn restore_agent_links(
 }
 
 /// 按 strategy 把已解析且通过校验的导入包(parsed)落地到 data_dir 与数据库, 返回落地统计
-/// (ImportOutcome, 见其文档)。落地前先重新校验一遍(validate_bundle, 与 parse_bundle 内部的
+/// (ImportOutcomeRespVO, 见其文档)。落地前先重新校验一遍(validate_bundle, 与 parse_bundle 内部的
 /// 校验重复, 但 ParsedBundle 的字段均为 pub, 调用方理论上可绕开 parse_bundle 直接手工构造,
 /// 这里多一道防线, 呼应 brief"先 validate_bundle 再落地"的顺序要求)。三种 ConflictStrategy
 /// 的处理规则见 domain::portability::ConflictStrategy 文档与本函数内各分支注释; 落地后可选
@@ -1086,7 +1096,7 @@ pub fn import_bundle(
 	data_dir: &Path,
 	parsed: ParsedBundle,
 	strategy: ConflictStrategy,
-) -> Result<ImportOutcome> {
+) -> Result<ImportOutcomeRespVO> {
 	validate_bundle(&parsed.manifest, &parsed.entries)?;
 
 	let ParsedBundle {
@@ -1173,7 +1183,7 @@ pub fn import_bundle(
 		status,
 	)?;
 
-	Ok(ImportOutcome {
+	Ok(ImportOutcomeRespVO {
 		imported,
 		skipped,
 		renamed,
@@ -1186,9 +1196,9 @@ pub fn import_bundle(
 /// 也让这一步能脱离真实 tauri::State 直接单测(本仓库 commands 层普遍约定, 见
 /// commands::market 文件头"均只接受 &Connection/&Path"的既有分层思路)。单个 Agent 应用失败
 /// (理论只在 agent_id 已失效等结构性错误时发生, 常规的"某几项同步失败"已被 apply_for_agent
-/// 内部吸收进其 SyncSummary.failed, 不会以 Err 形式冒出来)不应拖累其它 Agent, 静默跳过继续
-/// 处理下一个; 返回值为各在线 Agent(成功应用的那些)各自的 SyncSummary, 供调用方按需查看/丢弃
-pub fn sync_online_agents(conn: &Connection, home: &Path) -> Result<Vec<sync::SyncSummary>> {
+/// 内部吸收进其 SyncSummaryRespVO.failed, 不会以 Err 形式冒出来)不应拖累其它 Agent, 静默跳过继续
+/// 处理下一个; 返回值为各在线 Agent(成功应用的那些)各自的 SyncSummaryRespVO, 供调用方按需查看/丢弃
+pub fn sync_online_agents(conn: &Connection, home: &Path) -> Result<Vec<sync::SyncSummaryRespVO>> {
 	let mut summaries = Vec::new();
 	for agent in repo_agent::list(conn)? {
 		if !agent.status {
@@ -1270,8 +1280,8 @@ mod tests {
 		(data_dir, skill_id, mcp_id)
 	}
 
-	fn full_options(format: BundleFormat) -> ExportOptions {
-		ExportOptions {
+	fn full_options(format: BundleFormat) -> ExportReqVO {
+		ExportReqVO {
 			include_skills: true,
 			include_mcp: true,
 			scope: Scope::All,
@@ -1341,7 +1351,7 @@ mod tests {
 			.unwrap()
 			.read_to_string(&mut manifest_text)
 			.unwrap();
-		let manifest_in_zip: Manifest = serde_json::from_str(&manifest_text).unwrap();
+		let manifest_in_zip: ManifestRespVO = serde_json::from_str(&manifest_text).unwrap();
 		assert_eq!(
 			manifest_in_zip, manifest,
 			"归档内 manifest.json 应与返回值一致"
@@ -1400,7 +1410,8 @@ mod tests {
 		assert!(seen.contains_key("skills/demo-skill/scripts/run.sh"));
 		assert!(seen.contains_key("mcp/demo-mcp.json"));
 
-		let manifest_in_tar: Manifest = serde_json::from_slice(&seen["manifest.json"]).unwrap();
+		let manifest_in_tar: ManifestRespVO =
+			serde_json::from_slice(&seen["manifest.json"]).unwrap();
 		assert_eq!(manifest_in_tar, manifest);
 		assert_eq!(
 			seen["skills/demo-skill/SKILL.md"],
@@ -1430,7 +1441,7 @@ mod tests {
 		let text = fs::read_to_string(&out_path).unwrap();
 		let parsed: serde_json::Value = serde_json::from_str(&text).unwrap();
 
-		let manifest_in_json: Manifest =
+		let manifest_in_json: ManifestRespVO =
 			serde_json::from_value(parsed["manifest"].clone()).unwrap();
 		assert_eq!(manifest_in_json, manifest);
 
@@ -1458,7 +1469,7 @@ mod tests {
 		let (data_dir, _skill_id, _mcp_id) = seed_data_dir_and_resources(&conn);
 		let out_path = data_dir.path().join("out.zip");
 
-		let opts = ExportOptions {
+		let opts = ExportReqVO {
 			include_skills: true,
 			include_mcp: false,
 			scope: Scope::ByType,
@@ -1506,7 +1517,7 @@ mod tests {
 		let agent_id = seed_agent(&conn, "Claude Code");
 		repo_assoc::set(&conn, skill_id, agent_id, true).unwrap();
 
-		let opts = ExportOptions {
+		let opts = ExportReqVO {
 			include_skills: true,
 			include_mcp: true,
 			scope: Scope::All,
@@ -1656,10 +1667,10 @@ mod tests {
 	// 只能绕开各自的高层 API 直接拼裸字节)
 	// ========================================================================
 
-	// 造一份内容计数与 versions/checksums 均为空的最小 Manifest, 只有 schema_version 可指定,
+	// 造一份内容计数与 versions/checksums 均为空的最小 ManifestRespVO, 只有 schema_version 可指定,
 	// 供只关心 schema_version/checksums 这两个维度的校验类测试复用, 不必每次手写全部字段
-	fn empty_manifest(schema_version: i64) -> Manifest {
-		Manifest {
+	fn empty_manifest(schema_version: i64) -> ManifestRespVO {
+		ManifestRespVO {
 			schema_version,
 			exported_at: "2026-07-10T00:00:00Z".to_string(),
 			counts: Counts {
@@ -1877,7 +1888,7 @@ mod tests {
 	#[test]
 	fn preview_maps_manifest_counts_and_schema_ok_flag() {
 		let parsed = ParsedBundle {
-			manifest: Manifest {
+			manifest: ManifestRespVO {
 				counts: Counts {
 					skill: 2,
 					mcp: 1,
@@ -2264,7 +2275,7 @@ mod tests {
 
 	/// 手工拼一份 ParsedBundle, 供只关心 import_bundle 落地逻辑本身(而非真实归档格式)的测试
 	/// 快速构造输入: entries 直接给定, checksums 按 entries 内容精确计算(保证 validate_bundle
-	/// 能通过); manifest.counts 本身不影响 import_bundle 的任何行为(只是 ImportPreview 展示用
+	/// 能通过); manifest.counts 本身不影响 import_bundle 的任何行为(只是 ImportPreviewRespVO 展示用
 	/// 的统计, 见其文档), 固定填 0 占位即可; source_file_name/source_format 同样给固定占位值
 	fn build_parsed_bundle(files: &[(&str, &[u8])]) -> ParsedBundle {
 		let entries: BTreeMap<String, Vec<u8>> = files
@@ -2276,7 +2287,7 @@ mod tests {
 			.map(|(path, bytes)| (path.clone(), sha256_hex(bytes)))
 			.collect();
 		ParsedBundle {
-			manifest: Manifest {
+			manifest: ManifestRespVO {
 				schema_version: 1,
 				exported_at: "2026-07-10T00:00:00Z".to_string(),
 				counts: Counts {
@@ -2336,7 +2347,7 @@ mod tests {
 
 		assert_eq!(
 			outcome,
-			ImportOutcome {
+			ImportOutcomeRespVO {
 				imported: 2,
 				skipped: 0,
 				renamed: 0,
@@ -2463,7 +2474,7 @@ mod tests {
 
 		assert_eq!(
 			outcome,
-			ImportOutcome {
+			ImportOutcomeRespVO {
 				imported: 0,
 				skipped: 1,
 				renamed: 0,
@@ -2509,7 +2520,7 @@ mod tests {
 
 		assert_eq!(
 			outcome,
-			ImportOutcome {
+			ImportOutcomeRespVO {
 				imported: 0,
 				skipped: 0,
 				renamed: 1,
@@ -2739,7 +2750,7 @@ mod tests {
 
 		assert_eq!(
 			outcome,
-			ImportOutcome {
+			ImportOutcomeRespVO {
 				imported: 2,
 				skipped: 0,
 				renamed: 0,

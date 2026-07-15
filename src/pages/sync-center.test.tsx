@@ -1,12 +1,14 @@
 // 文件作用: Sync Center 页面集成测试(mock src/api) —— 统计卡聚合/Agent 表渲染/选中 Agent 打开
-//           差异面板/一键同步触发 sync_apply 并随 onSyncProgress 事件更新进度/完成后失效刷新
+//           差异面板/一键同步触发 sync_apply 并随 onSyncProgress 事件更新进度/完成后失效刷新/
+//           挂载时自动触发 agent_detect(M5 Task F1: 已移除手动"刷新"按钮)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { AgentRow } from '@/api/agent';
-import type { DiffPlan, SyncProgress, SyncSummary } from '@/api/sync';
+import type { AgentRespVO } from '@/api/agent';
+import type { DiffPlanRespVO, SyncProgress, SyncSummaryRespVO } from '@/api/sync';
 import { useUiStore } from '@/stores/ui';
 import SyncCenter from './sync-center';
 
@@ -28,7 +30,7 @@ import { agentDetect, agentList } from '@/api/agent';
 import { onSyncProgress, resourceAgentLinks, syncApply, syncDiff } from '@/api/sync';
 import { libraryList } from '@/api/library';
 
-function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
+function makeAgent(overrides: Partial<AgentRespVO> = {}): AgentRespVO {
 	return {
 		id: 1,
 		agentKind: 'ClaudeCode',
@@ -43,7 +45,7 @@ function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
 	};
 }
 
-const emptyPlan: DiffPlan = { items: [] };
+const emptyPlan: DiffPlanRespVO = { items: [] };
 
 function renderSyncCenter() {
 	const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -67,7 +69,7 @@ describe('SyncCenter 页面', () => {
 	});
 
 	it('应渲染 agent_list 聚合而来的统计卡数值与 Agent 表行', async () => {
-		const agents: AgentRow[] = [
+		const agents: AgentRespVO[] = [
 			makeAgent({ id: 1, name: 'Claude Code', status: true }),
 			makeAgent({ id: 2, name: 'Cursor', status: false }),
 		];
@@ -121,7 +123,7 @@ describe('SyncCenter 页面', () => {
 
 	it('点击某 Agent 行应据其 sync_diff 结果打开差异面板并显示条目', async () => {
 		const user = userEvent.setup();
-		const agents: AgentRow[] = [makeAgent({ id: 1, name: 'Claude Code' })];
+		const agents: AgentRespVO[] = [makeAgent({ id: 1, name: 'Claude Code' })];
 		vi.mocked(agentList).mockResolvedValue(agents);
 		vi.mocked(syncDiff).mockResolvedValue({
 			items: [
@@ -145,14 +147,14 @@ describe('SyncCenter 页面', () => {
 
 	it('点击"一键同步到所有 Agent"应调用 sync_apply(在线本地 Agent id), 并随 onSyncProgress 更新进度提示', async () => {
 		const user = userEvent.setup();
-		const agents: AgentRow[] = [
+		const agents: AgentRespVO[] = [
 			makeAgent({ id: 1, name: 'Claude Code', status: true }),
 			makeAgent({ id: 2, name: 'Cursor', status: false }),
 		];
 		vi.mocked(agentList).mockResolvedValue(agents);
-		let resolveApply!: (value: SyncSummary) => void;
+		let resolveApply!: (value: SyncSummaryRespVO) => void;
 		vi.mocked(syncApply).mockReturnValue(
-			new Promise<SyncSummary>((resolve) => {
+			new Promise<SyncSummaryRespVO>((resolve) => {
 				resolveApply = resolve;
 			}),
 		);
@@ -176,15 +178,20 @@ describe('SyncCenter 页面', () => {
 		await waitFor(() => expect(agentList).toHaveBeenCalledTimes(2));
 	});
 
-	it('点击顶部刷新按钮应调用 agent_detect', async () => {
-		const user = userEvent.setup();
+	it('挂载时应自动调用 agent_detect(不再需要手动点刷新), 其结果落地为 Agent 表数据', async () => {
 		vi.mocked(agentList).mockResolvedValue([]);
 		vi.mocked(agentDetect).mockResolvedValue([makeAgent({ id: 1, name: 'Claude Code' })]);
 
 		renderSyncCenter();
-		await user.click(screen.getByRole('button', { name: /刷新/ }));
 
-		expect(agentDetect).toHaveBeenCalled();
+		await waitFor(() => expect(agentDetect).toHaveBeenCalledTimes(1));
 		expect(await screen.findByText('Claude Code')).toBeInTheDocument();
+	});
+
+	it('不应再渲染手动"刷新"按钮', async () => {
+		vi.mocked(agentList).mockResolvedValue([]);
+		renderSyncCenter();
+		await waitFor(() => expect(agentDetect).toHaveBeenCalled());
+		expect(screen.queryByRole('button', { name: /刷新/ })).not.toBeInTheDocument();
 	});
 });

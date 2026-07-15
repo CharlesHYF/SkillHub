@@ -1,6 +1,7 @@
-// 文件作用: 资源领域类型 —— ResourceType/SourceType 枚举与 Resource 实体,
+// 文件作用: 资源领域类型 —— ResourceType/SourceType 枚举与 ResourceRespVO 实体,
 //           提供与 resource 表 INTEGER 列的 i64 互转(见 migrations/0001_init.sql)
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use serde::{Deserialize, Serialize};
 
@@ -34,12 +35,15 @@ impl From<ResourceType> for i64 {
 }
 
 /// 资源来源: 对应 resource.source_type 列
-/// 0-本地导入, 1-官方仓库, 2-第三方仓库
+/// 0-本地导入, 1-官方仓库, 2-第三方仓库, 3-Agent导入(M6 Task BE-2: 从已检测 Agent 实际态
+/// 扫描到的、原本就已装在该 Agent 里的 Skill/MCP, 反向导入进本地库, 与用户主动挑选路径/文件的
+/// LocalImport 区分开, 便于后续在库列表/详情里标注"来源: 从 XX 检测导入")
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SourceType {
 	LocalImport,
 	Official,
 	ThirdParty,
+	AgentImport,
 }
 
 impl SourceType {
@@ -48,6 +52,7 @@ impl SourceType {
 		match value {
 			1 => SourceType::Official,
 			2 => SourceType::ThirdParty,
+			3 => SourceType::AgentImport,
 			_ => SourceType::LocalImport,
 		}
 	}
@@ -59,6 +64,7 @@ impl From<SourceType> for i64 {
 			SourceType::LocalImport => 0,
 			SourceType::Official => 1,
 			SourceType::ThirdParty => 2,
+			SourceType::AgentImport => 3,
 		}
 	}
 }
@@ -66,7 +72,7 @@ impl From<SourceType> for i64 {
 /// 资源实体: 对应 resource 表一行(SkillHub 托管的 Skill/MCP 元数据)
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct Resource {
+pub struct ResourceRespVO {
 	pub id: i64,
 	pub res_type: ResourceType,
 	pub name: String,
@@ -99,15 +105,17 @@ mod tests {
 		assert_eq!(ResourceType::from_i64(99), ResourceType::Skill);
 	}
 
-	// SourceType: 已知值双向互转应精确对应枚举变体
+	// SourceType: 已知值双向互转应精确对应枚举变体(含 M6 Task BE-2 新增的 AgentImport=3)
 	#[test]
 	fn source_type_from_i64_known_values_round_trip() {
 		assert_eq!(SourceType::from_i64(0), SourceType::LocalImport);
 		assert_eq!(SourceType::from_i64(1), SourceType::Official);
 		assert_eq!(SourceType::from_i64(2), SourceType::ThirdParty);
+		assert_eq!(SourceType::from_i64(3), SourceType::AgentImport);
 		assert_eq!(i64::from(SourceType::LocalImport), 0);
 		assert_eq!(i64::from(SourceType::Official), 1);
 		assert_eq!(i64::from(SourceType::ThirdParty), 2);
+		assert_eq!(i64::from(SourceType::AgentImport), 3);
 	}
 
 	// SourceType: 未知值(脏数据)应兜底为列默认值 LocalImport, 不 panic

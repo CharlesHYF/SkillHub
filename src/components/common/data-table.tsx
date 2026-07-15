@@ -1,5 +1,6 @@
 // 文件作用: 泛型数据表(列配置驱动), 支持可选行点击/选中/斑马纹, hover 行由 Table 基元自带
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import type { ReactNode } from 'react';
 import {
 	Table,

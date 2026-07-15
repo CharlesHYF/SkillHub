@@ -1,5 +1,6 @@
 // 文件作用: agent api 层单测
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 import { describe, it, expect, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 
@@ -7,9 +8,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 	invoke: vi.fn(async () => []),
 }));
 
-import { agentDetect, agentList, type AgentRow } from './agent';
+import { agentDetect, agentList, type AgentRespVO } from './agent';
 
-const sampleAgent: AgentRow = {
+const sampleAgent: AgentRespVO = {
 	id: 1,
 	agentKind: 'ClaudeCode',
 	name: 'Claude Code',

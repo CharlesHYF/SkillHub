@@ -1,9 +1,10 @@
 // 文件作用: github_skills 市场源 —— 聚合若干 GitHub 仓库下 skills_dir 内含 SKILL.md 的目录,
-//           解析其 YAML frontmatter(name/description/version)归一化为 MarketResource, 并在
+//           解析其 YAML frontmatter(name/description/version)归一化为 MarketResourceRespVO, 并在
 //           下载安装时递归拉取该 Skill 子目录下的全部文件, 实现 SourceProvider(见 infra::
 //           source::mod)。GitHub contents API 细节按官方 REST v3: 目录路径返回条目数组,
 //           文件路径返回单个对象(含 base64 content), 具体调用见 GithubCtx
 // 创建日期: 2026-07-09
+// 修改日期: 2026-07-13
 
 use std::collections::VecDeque;
 
@@ -13,7 +14,7 @@ use base64::prelude::*;
 use reqwest::Client;
 use serde::Deserialize;
 
-use crate::domain::market::{InstallManifest, MarketResource, Query, SourceId};
+use crate::domain::market::{InstallManifest, MarketResourceRespVO, Query, SourceId};
 use crate::domain::resource::ResourceType;
 use crate::infra::http::{get_json, HttpResult};
 
@@ -123,6 +124,35 @@ impl GithubCtx<'_> {
 			HttpResult::NotModified => anyhow::bail!("意外的 304(本调用未传 etag): {url}"),
 		}
 	}
+
+	/// 拉取本仓库的星标数与最后一次 push 时间(GitHub repos API `GET /repos/{owner}/{repo}`);
+	/// 每个仓库在一次 search 里只调用一次, 供 search 施于该仓库下产出的全部 MarketResourceRespVO,
+	/// 而不是逐资源调用, 呼应"匿名限流 60 次/时, 严禁逐资源调用把额度打爆"的约束。请求失败
+	/// (网络错误/限流/非 2xx)时把 Err 交回调用方, 由调用方 unwrap_or_default() 兜底为
+	/// stars=0/pushed_at=空串(不劣于富化前"恒为 0/空串"的既有行为), 不让这一次额外调用连累
+	/// 整次 search 失败
+	async fn fetch_repo_meta(&self) -> Result<RepoMeta> {
+		let url = format!("{}/repos/{}/{}", self.base_url, self.owner, self.repo);
+		match get_json::<RepoMeta>(self.client, &url, self.token, None).await? {
+			HttpResult::Ok { data, .. } => Ok(data),
+			HttpResult::NotModified => anyhow::bail!("意外的 304(本调用未传 etag): {url}"),
+		}
+	}
+}
+
+/// GitHub repos API 单次仓库详情响应的归一化视图, 只取本任务需要的两个字段。派生 Default
+/// 供 fetch_repo_meta 失败时由调用方 unwrap_or_default() 优雅降级; 派生 Deserialize 时对两个
+/// 字段都标 #[serde(default)], 即便响应体意外缺失该字段也兜底为 0/空串而不是解析报错
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+struct RepoMeta {
+	/// 仓库星标数, 落库到 MarketResourceRespVO.stars, 施于该仓库下的全部资源
+	#[serde(default, rename = "stargazers_count")]
+	stars: i64,
+	/// 仓库最后一次 push 时间(ISO 8601), 落库到 MarketResourceRespVO.updated_at, 施于该仓库下的
+	/// 全部资源; 用仓库级 push 时间而非逐资源的提交历史, 避免为每条资源单独查一次昂贵的
+	/// commits API
+	#[serde(default, rename = "pushed_at")]
+	pushed_at: String,
 }
 
 /// 解出 ContentsItem.content 携带的原始字节: GitHub 返回 base64 编码, 且每行按 60 字符换行,
@@ -146,19 +176,24 @@ fn decode_content(item: &ContentsItem) -> Result<Vec<u8>> {
 		.context("base64 解码文件内容失败")
 }
 
-/// 从 SKILL.md 全文解析出的三个 frontmatter 字段, 均可缺省(缺省给空串)
+/// 从 SKILL.md 全文解析出的四个 frontmatter 字段, 均可缺省(缺省给空串)。M6 市场元数据富化任务
+/// 新增 category: 经核实官方 anthropics/skills 仓库当前 SKILL.md frontmatter 只有 name/
+/// description/license 三个字段(无 category, 也无 version, 见 search 文档"关于 version"一节),
+/// 故该默认仓库产出的资源 category 恒为空串, 如实留空不臆造分类; 一旦某仓库的 SKILL.md 补上
+/// 该字段即可自动被下面的 parse_frontmatter 识别生效
 #[derive(Debug, Clone, Default, PartialEq)]
 struct SkillFrontmatter {
 	name: String,
 	description: String,
 	version: String,
+	category: String,
 }
 
-/// 从 SKILL.md 全文提取 YAML frontmatter 里的 name/description/version 三个字段; 只做逐行
-/// 字符串扫描, 不引入 YAML 解析依赖(与 adapter::skill_target::parse_frontmatter_version 同一
-/// 惯例, 该函数只需读一个字段, 这里扩到三个, 各自模块独立维护一份, 体量小不值得跨层共享)。
+/// 从 SKILL.md 全文提取 YAML frontmatter 里的 name/description/version/category 四个字段; 只做
+/// 逐行字符串扫描, 不引入 YAML 解析依赖(与 adapter::skill_target::parse_frontmatter_version 同一
+/// 惯例, 该函数只需读一个字段, 这里扩到四个, 各自模块独立维护一份, 体量小不值得跨层共享)。
 /// frontmatter 必须以独占一行的 `---` 开头, 扫描到下一个独占一行的 `---` 为止; 边界不存在时
-/// 三个字段均返回空串。取值支持前后空白与成对单/双引号包裹(如 `description: "..."`), 引号会
+/// 四个字段均返回空串。取值支持前后空白与成对单/双引号包裹(如 `description: "..."`), 引号会
 /// 被裁掉
 fn parse_frontmatter(text: &str) -> SkillFrontmatter {
 	let mut result = SkillFrontmatter::default();
@@ -180,6 +215,8 @@ fn parse_frontmatter(text: &str) -> SkillFrontmatter {
 			result.description = strip_matching_quotes(value.trim()).to_string();
 		} else if let Some(value) = trimmed.strip_prefix("version:") {
 			result.version = strip_matching_quotes(value.trim()).to_string();
+		} else if let Some(value) = trimmed.strip_prefix("category:") {
+			result.category = strip_matching_quotes(value.trim()).to_string();
 		}
 	}
 	result
@@ -205,15 +242,22 @@ impl SourceProvider for GithubSkillsProvider {
 	}
 
 	/// 遍历 repos 列表, 对每个仓库列出 skills_dir 下的子目录, 逐一尝试读取其 SKILL.md 并解析
-	/// frontmatter, 归一化为 MarketResource; 不含 SKILL.md 的子目录(fetch_file_content 出错,
+	/// frontmatter, 归一化为 MarketResourceRespVO; 不含 SKILL.md 的子目录(fetch_file_content 出错,
 	/// 如 404)视为"不是一个 Skill", 跳过而非让整次 search 失败。关键字/分类过滤留给聚合层
-	/// (services::market, Task 6), 本方法恒返回全量, query 参数暂未使用(签名与其它源统一)
+	/// (services::market, Task 6), 本方法恒返回全量, query 参数暂未使用(签名与其它源统一)。
+	///
+	/// M6 市场元数据富化: 每个仓库在列出 skills_dir 之外额外发起一次 fetch_repo_meta(仓库级,
+	/// 不随子目录数量线性增长), 把返回的星标数/最后 push 时间施于该仓库下产出的全部资源
+	/// (stars/updated_at); 该调用失败(限流/网络错误)时优雅降级为 0/空串(见 fetch_repo_meta
+	/// 文档), 不影响本仓库其余资源的正常产出。关于 version: 取自 frontmatter, 若来源仓库的
+	/// SKILL.md 未提供该字段(如官方 anthropics/skills 当前的实际情况, 见 SkillFrontmatter
+	/// 文档), 则如实留空, 不虚构版本号
 	async fn search(
 		&self,
 		client: &Client,
 		_query: &Query,
 		token: Option<&str>,
-	) -> Result<Vec<MarketResource>> {
+	) -> Result<Vec<MarketResourceRespVO>> {
 		let mut resources = Vec::new();
 		for repo_ref in &self.repos {
 			let ctx = GithubCtx {
@@ -224,6 +268,7 @@ impl SourceProvider for GithubSkillsProvider {
 				git_ref: &repo_ref.branch,
 				token,
 			};
+			let repo_meta = ctx.fetch_repo_meta().await.unwrap_or_default();
 			let entries = ctx
 				.list_contents(&repo_ref.skills_dir)
 				.await
@@ -251,7 +296,7 @@ impl SourceProvider for GithubSkillsProvider {
 					frontmatter.name.clone()
 				};
 
-				resources.push(MarketResource {
+				resources.push(MarketResourceRespVO {
 					source_type: SourceId::GithubSkills,
 					res_type: ResourceType::Skill,
 					ext_id: format!("{}/{}/{}", repo_ref.owner, repo_ref.repo, entry.path),
@@ -260,8 +305,8 @@ impl SourceProvider for GithubSkillsProvider {
 					description: frontmatter.description,
 					author: repo_ref.owner.clone(),
 					version: frontmatter.version,
-					stars: 0,
-					category: String::new(),
+					stars: repo_meta.stars,
+					category: frontmatter.category,
 					tags: Vec::new(),
 					auth_required: false,
 					install_manifest: InstallManifest::Skill {
@@ -269,7 +314,7 @@ impl SourceProvider for GithubSkillsProvider {
 						path: entry.path.clone(),
 						git_ref: repo_ref.branch.clone(),
 					},
-					updated_at: String::new(),
+					updated_at: repo_meta.pushed_at.clone(),
 				});
 			}
 		}
@@ -281,7 +326,7 @@ impl SourceProvider for GithubSkillsProvider {
 	async fn fetch_payload(
 		&self,
 		client: &Client,
-		resource: &MarketResource,
+		resource: &MarketResourceRespVO,
 		token: Option<&str>,
 	) -> Result<InstallPayload> {
 		let InstallManifest::Skill {
@@ -345,7 +390,7 @@ impl SourceProvider for GithubSkillsProvider {
 	}
 
 	/// 匿名可读公开仓库但受限流, 登录 GitHub 可提额/访问私有仓库; 具体某条资源是否强制要求
-	/// 认证见 MarketResource.auth_required(本源产出的资源恒为 false, 见 search 文档)
+	/// 认证见 MarketResourceRespVO.auth_required(本源产出的资源恒为 false, 见 search 文档)
 	fn auth_kind(&self) -> Option<AuthKind> {
 		Some(AuthKind::GitHub)
 	}
@@ -385,8 +430,8 @@ mod tests {
 		}
 	}
 
-	fn sample_market_resource(path: &str) -> MarketResource {
-		MarketResource {
+	fn sample_market_resource(path: &str) -> MarketResourceRespVO {
+		MarketResourceRespVO {
 			source_type: SourceId::GithubSkills,
 			res_type: ResourceType::Skill,
 			ext_id: format!("acme/demo-repo/{path}"),
@@ -432,7 +477,7 @@ mod tests {
 			.await;
 	}
 
-	// search: 应从 skills_dir 下的 2 个目录归一化出 2 条 MarketResource, 非目录条目
+	// search: 应从 skills_dir 下的 2 个目录归一化出 2 条 MarketResourceRespVO, 非目录条目
 	// (README.md)应被过滤; name/description/version/ext_id/install_manifest 均应正确;
 	// frontmatter 缺 name/version 时应回退目录名/空串
 	#[tokio::test]
@@ -454,7 +499,7 @@ mod tests {
 			"demo-repo",
 			"skills/foo/SKILL.md",
 			"main",
-			"---\nname: foo-skill\ndescription: Foo 的描述\nversion: 1.0.0\n---\n# Foo\n",
+			"---\nname: foo-skill\ndescription: Foo 的描述\nversion: 1.0.0\ncategory: file-processing\n---\n# Foo\n",
 		)
 		.await;
 		mount_file(
@@ -487,6 +532,7 @@ mod tests {
 		assert_eq!(foo.display_name, "foo-skill");
 		assert_eq!(foo.description, "Foo 的描述");
 		assert_eq!(foo.version, "1.0.0");
+		assert_eq!(foo.category, "file-processing");
 		assert_eq!(foo.author, "acme");
 		assert!(!foo.auth_required);
 		assert_eq!(
@@ -504,6 +550,99 @@ mod tests {
 			.expect("应含 bar");
 		assert_eq!(bar.name, "bar", "frontmatter 无 name 字段应回退为目录名");
 		assert_eq!(bar.version, "", "frontmatter 无 version 字段应给空串");
+		assert_eq!(bar.category, "", "frontmatter 无 category 字段应给空串");
+	}
+
+	// search: 应对每个仓库只调用一次 repos API(GET /repos/{owner}/{repo})取星标数与最后 push
+	// 时间, 并把同一份仓库级元数据施于该仓库下产出的全部资源(foo/bar 两条), 而不是逐资源分别
+	// 请求; 呼应"匿名限流 60 次/时, 严禁逐资源调用把额度打爆"的约束
+	#[tokio::test]
+	async fn search_enriches_stars_and_updated_at_from_repo_level_metadata() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.and(path("/repos/acme/demo-repo"))
+			.respond_with(ResponseTemplate::new(200).set_body_json(json!({
+				"stargazers_count": 321,
+				"pushed_at": "2026-05-01T00:00:00Z",
+			})))
+			.mount(&server)
+			.await;
+		Mock::given(method("GET"))
+			.and(path("/repos/acme/demo-repo/contents/skills"))
+			.respond_with(ResponseTemplate::new(200).set_body_json(json!([
+				{"name": "foo", "path": "skills/foo", "type": "dir"},
+				{"name": "bar", "path": "skills/bar", "type": "dir"},
+			])))
+			.mount(&server)
+			.await;
+		mount_file(
+			&server,
+			"acme",
+			"demo-repo",
+			"skills/foo/SKILL.md",
+			"main",
+			"---\nname: foo-skill\n---\n",
+		)
+		.await;
+		mount_file(
+			&server,
+			"acme",
+			"demo-repo",
+			"skills/bar/SKILL.md",
+			"main",
+			"---\nname: bar-skill\n---\n",
+		)
+		.await;
+
+		let provider = GithubSkillsProvider::with_base_url(vec![sample_repo_ref()], server.uri());
+		let resources = provider
+			.search(&client(), &sample_query(), None)
+			.await
+			.unwrap();
+
+		assert_eq!(resources.len(), 2);
+		for resource in &resources {
+			assert_eq!(resource.stars, 321, "仓库级星标数应施于该仓库下的全部资源");
+			assert_eq!(
+				resource.updated_at, "2026-05-01T00:00:00Z",
+				"仓库级 push 时间应施于该仓库下的全部资源"
+			);
+		}
+	}
+
+	// search: 仓库级元数据请求失败(本测试故意不 mount /repos/acme/demo-repo, 走 wiremock 默认
+	// 404)时应优雅降级为 stars=0/updated_at=空串, 不 panic 也不让整次 search 失败, 不劣于富化前
+	// "恒为 0/空串"的既有行为
+	#[tokio::test]
+	async fn search_defaults_stars_and_updated_at_when_repo_meta_fetch_fails() {
+		let server = MockServer::start().await;
+		Mock::given(method("GET"))
+			.and(path("/repos/acme/demo-repo/contents/skills"))
+			.respond_with(ResponseTemplate::new(200).set_body_json(json!([
+				{"name": "foo", "path": "skills/foo", "type": "dir"},
+			])))
+			.mount(&server)
+			.await;
+		mount_file(
+			&server,
+			"acme",
+			"demo-repo",
+			"skills/foo/SKILL.md",
+			"main",
+			"---\nname: foo-skill\n---\n",
+		)
+		.await;
+		// 故意不 mount /repos/acme/demo-repo, 模拟仓库级元数据请求失败(如限流)
+
+		let provider = GithubSkillsProvider::with_base_url(vec![sample_repo_ref()], server.uri());
+		let resources = provider
+			.search(&client(), &sample_query(), None)
+			.await
+			.unwrap();
+
+		assert_eq!(resources.len(), 1, "仓库级元数据失败不应连累资源列表本身");
+		assert_eq!(resources[0].stars, 0);
+		assert_eq!(resources[0].updated_at, "");
 	}
 
 	// search: 子目录下没有 SKILL.md(mock 未挂载, 走 wiremock 默认 404)应被跳过, 不报错也不
